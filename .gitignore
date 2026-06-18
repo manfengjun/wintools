@@ -1,0 +1,24 @@
+# Build
+build/
+dist/
+*.exe
+*.exe~
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
