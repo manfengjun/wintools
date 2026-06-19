@@ -19,7 +19,7 @@ import (
 
 const (
 	CurrentVersion = "1.0.0"
-	DefaultCheckURL = "https://gitee.com/api/v5/repos/manfengjun/wintools/releases/latest"
+	DefaultCheckURL = "https://gitee.com/api/v5/repos/3672830/wintools/releases/latest"
 )
 
 // UpdateInfo 更新检测结果
