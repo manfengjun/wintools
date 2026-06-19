@@ -2,7 +2,7 @@
 
 机器人编程教学桌面工具套件。面向课堂场景，帮助老师管理学生电脑。
 
-> 微信: asd3672830 | [GitHub](https://github.com/manfengjun/wintools) | [Gitee](https://gitee.com/manfengjun/wintools)
+> 微信: asd3672830 | [GitHub](https://github.com/manfengjun/wintools) | [Gitee](https://gitee.com/3672830/wintools)
 
 ---
 

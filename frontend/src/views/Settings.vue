@@ -102,7 +102,7 @@ const updateURLSaved = ref(false)
 const updatePreset = ref('gitee')
 
 const updatePresets = [
-  { id: 'gitee', label: 'Gitee', url: 'https://gitee.com/api/v5/repos/manfengjun/wintools/releases/latest' },
+  { id: 'gitee', label: 'Gitee', url: 'https://gitee.com/api/v5/repos/3672830/wintools/releases/latest' },
   { id: 'github', label: 'GitHub', url: 'https://api.github.com/repos/manfengjun/wintools/releases/latest' },
   { id: 'custom', label: '自定义', url: '' },
 ]
