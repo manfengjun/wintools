@@ -139,6 +139,6 @@ gh release create v1.0.1 build/bin/Wintools.exe#Wintools_Windows_x86_64.exe --ti
 
 ## 开源协议
 
-MIT License © 2026 manfengjun
+[MIT License](LICENSE) © 2026 manfengjun
 
 微信: asd3672830
