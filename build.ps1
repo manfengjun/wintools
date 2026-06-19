@@ -24,6 +24,18 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProjectDir = Split-Path $PSScriptRoot -Parent
 
+# ── Gitee Token (从环境变量读取，或在此设置) ──────────────
+# 设置环境变量: $env:GITEE_TOKEN = "你的token"
+$GiteeToken = $env:GITEE_TOKEN
+if (-not $GiteeToken) {
+    # 尝试从 git credential 读取
+    try {
+        $GiteeToken = (git credential-manager get 2>$null | Out-String | Select-String "password=(.+)").Matches.Groups[1].Value
+    } catch {}
+}
+$GiteeOwner = "3672830"
+$GiteeRepo = "wintools"
+
 # ── 版本号管理 ──────────────────────────────────────────────
 
 $VersionFile = "$ProjectDir\internal\updater\checker.go"
@@ -136,10 +148,20 @@ function New-Release {
     try {
         gh release create $tag "$exe#Wintools_Windows_x86_64.exe" `
             --title "Wintools $tag" --notes $notes `
-            -R gitee.com/manfengjun/wintools 2>&1 | Out-Null
+            -R gitee.com/$GiteeOwner/$GiteeRepo 2>&1 | Out-Null
         Write-Host "   ✅ Gitee release 已创建" -ForegroundColor Green
     } catch {
-        Write-Warning "   ⚠️ Gitee 发布失败: $_"
+        Write-Warning "   ⚠️ Gitee release 创建失败，尝试 API 上传..."
+        # 用 API 上传附件（Gitee 不支持 gh 时备用）
+        if ($GiteeToken) {
+            $tmpExe = "$env:TEMP\Wintools_Windows_x86_64.exe"
+            Copy-Item $exe $tmpExe -Force
+            $releaseId = (curl -s "https://gitee.com/api/v5/repos/$GiteeOwner/$GiteeRepo/releases?access_token=$GiteeToken&tag_name=$tag" | ConvertFrom-Json).id
+            if ($releaseId) {
+                curl -s -X POST "https://gitee.com/api/v5/repos/$GiteeOwner/$GiteeRepo/releases/$releaseId/attach_files?access_token=$GiteeToken" -F "file=@$tmpExe" | Out-Null
+                Write-Host "   ✅ Gitee 附件已上传" -ForegroundColor Green
+            }
+        }
     }
 
     # 发布到 GitHub

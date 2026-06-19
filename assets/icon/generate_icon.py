@@ -7,15 +7,9 @@ ASSET_DIR = Path(__file__).resolve().parent
 SIZE = 1024
 
 BASE_STOPS = [
-    (0.0, (47, 107, 255)),
-    (0.56, (29, 174, 255)),
-    (1.0, (35, 215, 164)),
-]
-
-CORE_STOPS = [
-    (0.0, (217, 246, 255)),
-    (0.48, (255, 255, 255)),
-    (1.0, (204, 255, 241)),
+    (0.0, (122, 92, 255)),
+    (0.58, (200, 77, 255)),
+    (1.0, (255, 111, 174)),
 ]
 
 
@@ -57,76 +51,77 @@ def rounded_mask(bounds, radius):
 
 
 def build_base():
-    base = diagonal_gradient(SIZE, BASE_STOPS, 0.62, 0.92)
-    base.putalpha(rounded_mask((96, 96, 928, 928), 220))
+    base = diagonal_gradient(SIZE, BASE_STOPS, 0.7, 0.86)
+    base.putalpha(rounded_mask((104, 104, 920, 920), 210))
 
-    gloss = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    gloss_draw = ImageDraw.Draw(gloss)
-    gloss_draw.ellipse((136, 102, 742, 594), fill=(255, 255, 255, 72))
-    gloss = gloss.filter(ImageFilter.GaussianBlur(42))
-    gloss.putalpha(ImageChops.multiply(gloss.getchannel("A"), rounded_mask((96, 96, 928, 928), 220)))
-    base.alpha_composite(gloss)
+    glow = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    glow_draw = ImageDraw.Draw(glow)
+    glow_draw.ellipse((146, 110, 642, 494), fill=(255, 255, 255, 76))
+    glow = glow.filter(ImageFilter.GaussianBlur(42))
+    glow.putalpha(ImageChops.multiply(glow.getchannel("A"), rounded_mask((104, 104, 920, 920), 210)))
+    base.alpha_composite(glow)
 
     stroke = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     stroke_draw = ImageDraw.Draw(stroke)
-    stroke_draw.rounded_rectangle((118, 118, 906, 906), radius=198, outline=(255, 255, 255, 52), width=2)
+    stroke_draw.rounded_rectangle((126, 126, 898, 898), radius=188, outline=(255, 255, 255, 46), width=2)
     base.alpha_composite(stroke)
     return base
 
 
-def build_core_mask():
+def build_robot_mask():
     mask = Image.new("L", (SIZE, SIZE), 0)
     draw = ImageDraw.Draw(mask)
-    draw.rounded_rectangle((252, 396, 772, 812), radius=156, fill=255)
-    draw.rounded_rectangle((338, 212, 686, 566), radius=174, fill=255)
-    draw.rounded_rectangle((418, 292, 606, 492), radius=96, fill=0)
-    draw.rectangle((418, 492, 606, 566), fill=0)
+    draw.rounded_rectangle((300, 300, 724, 736), radius=156, fill=255)
     return mask
 
 
 def build_code_cut():
     cut = Image.new("L", (SIZE, SIZE), 0)
     draw = ImageDraw.Draw(cut)
-    draw.polygon([(430, 506), (576, 596), (430, 686), (492, 686), (646, 596), (492, 506)], fill=255)
-    draw.rounded_rectangle((570, 648, 730, 706), radius=29, fill=255)
+    draw.polygon([(440, 566), (530, 628), (440, 690), (494, 690), (592, 628), (494, 566)], fill=255)
+    draw.rounded_rectangle((566, 655, 666, 693), radius=19, fill=255)
     return cut
 
 
-def build_core():
-    core = diagonal_gradient(SIZE, CORE_STOPS, 0.5, 0.8)
-    core_mask = build_core_mask()
+def build_robot():
+    robot_mask = build_robot_mask()
     cut_mask = build_code_cut()
-    final_mask = ImageChops.subtract(core_mask, cut_mask)
-    core.putalpha(final_mask)
+    final_mask = ImageChops.subtract(robot_mask, cut_mask)
 
     shadow_mask = final_mask.filter(ImageFilter.GaussianBlur(22))
-    shadow = Image.new("RGBA", (SIZE, SIZE), (9, 34, 83, 0))
+    shadow = Image.new("RGBA", (SIZE, SIZE), (71, 31, 139, 0))
     shadow.putalpha(shadow_mask)
-    shadow = ImageChops.offset(shadow, 0, 20)
+    shadow = ImageChops.offset(shadow, 0, 24)
 
-    accent_bar = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    accent_draw = ImageDraw.Draw(accent_bar)
-    accent_draw.rounded_rectangle((290, 482, 734, 538), radius=28, fill=(255, 255, 255, 30))
-    accent_bar.putalpha(ImageChops.multiply(accent_bar.getchannel("A"), final_mask))
+    robot = Image.new("RGBA", (SIZE, SIZE), (255, 255, 255, 0))
+    robot.putalpha(final_mask)
 
     outline = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     outline_draw = ImageDraw.Draw(outline)
-    outline_draw.rounded_rectangle((252, 396, 772, 812), radius=156, outline=(255, 255, 255, 52), width=4)
-    outline_draw.rounded_rectangle((338, 212, 686, 566), radius=174, outline=(255, 255, 255, 44), width=4)
+    outline_draw.rounded_rectangle((300, 300, 724, 736), radius=156, outline=(244, 223, 255, 255), width=4)
     outline.putalpha(ImageChops.multiply(outline.getchannel("A"), final_mask))
+
+    antennas = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    antennas_draw = ImageDraw.Draw(antennas)
+    antennas_draw.rounded_rectangle((390, 360, 436, 478), radius=23, fill=(255, 255, 255, 255))
+    antennas_draw.rounded_rectangle((588, 360, 634, 478), radius=23, fill=(255, 255, 255, 255))
+
+    eyes = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    eyes_draw = ImageDraw.Draw(eyes)
+    eyes_draw.ellipse((392, 490, 452, 550), fill=(142, 108, 255, 255))
+    eyes_draw.ellipse((572, 490, 632, 550), fill=(142, 108, 255, 255))
 
     footer = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     footer_draw = ImageDraw.Draw(footer)
-    footer_draw.rounded_rectangle((242, 750, 782, 834), radius=58, fill=(12, 61, 143, 26))
-    footer.putalpha(ImageChops.multiply(footer.getchannel("A"), final_mask))
+    footer_draw.rounded_rectangle((350, 728, 674, 762), radius=17, fill=(230, 219, 255, 184))
 
-    return shadow, core, accent_bar, outline, footer
+    return shadow, robot, outline, antennas, eyes, footer
 
 
 def make_icon():
     canvas = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     canvas.alpha_composite(build_base())
-    for layer in build_core():
+    for layer in build_robot():
         canvas.alpha_composite(layer)
     return canvas
 
