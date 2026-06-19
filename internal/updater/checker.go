@@ -19,7 +19,7 @@ import (
 
 const (
 	CurrentVersion = "1.0.0"
-	DefaultCheckURL = "https://api.github.com/repos/jj/wintools/releases/latest"
+	DefaultCheckURL = "https://api.github.com/repos/manfengjun/wintools/releases/latest"
 )
 
 // UpdateInfo 更新检测结果
