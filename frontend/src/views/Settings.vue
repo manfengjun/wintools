@@ -1,7 +1,9 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import * as theme from '../theme.js'
 import { useT, setLocale, getLocale, detectLanguage, loadLocalePref } from '../locale.js'
+import { VerifyPassword, ChangePassword, ChangeDefaultPassword, IsDefaultPassword } from '../../wailsjs/go/desktoplock/API'
+import { CheckUpdate, DownloadUpdate, ApplyUpdate } from '../../wailsjs/go/updater/API'
 
 const emit = defineEmits(['close'])
 
@@ -11,6 +13,8 @@ const categories = [
   { id: 'appearance', labelKey: 'settings.appearance', subtitleKey: 'settings.appearanceSub' },
   { id: 'mirror', labelKey: 'settings.mirror', subtitleKey: 'settings.mirrorSub' },
   { id: 'language', labelKey: 'settings.language', subtitleKey: 'settings.languageSub' },
+  { id: 'password', labelKey: 'settings.password', subtitleKey: 'settings.passwordSub' },
+  { id: 'update', labelKey: 'settings.update', subtitleKey: 'settings.updateSub' },
   { id: 'about', labelKey: 'settings.about', subtitleKey: 'settings.aboutSub' },
 ]
 
@@ -50,6 +54,90 @@ const mirrorOptions = [
   { value: 'https://pypi.org/simple', labelKey: 'settings.mirrorOfficial' },
 ]
 
+// ── 管理密码 ──
+const pwdOld = ref('')
+const pwdNew1 = ref('')
+const pwdNew2 = ref('')
+const pwdToast = ref('')
+const pwdToastType = ref('info')
+const isDefaultPwd = ref(false)
+
+function showPwdToast(msg, type = 'info') {
+  pwdToast.value = msg
+  pwdToastType.value = type
+  setTimeout(() => { pwdToast.value = '' }, 3000)
+}
+
+async function checkDefaultPwd() {
+  isDefaultPwd.value = await IsDefaultPassword()
+}
+
+async function confirmPwdChange() {
+  if (pwdNew1.value !== pwdNew2.value) {
+    showPwdToast(t('settings.pwdMismatch'), 'error')
+    return
+  }
+  const isDefault = await IsDefaultPassword()
+  let ok, msgText
+  if (isDefault) {
+    ;[ok, msgText] = await ChangeDefaultPassword(pwdNew1.value)
+  } else {
+    ;[ok, msgText] = await ChangePassword(pwdOld.value, pwdNew1.value)
+  }
+  if (ok) {
+    showPwdToast(t('settings.pwdChanged'), 'success')
+    pwdOld.value = ''; pwdNew1.value = ''; pwdNew2.value = ''
+    isDefaultPwd.value = false
+  } else {
+    showPwdToast(msgText, 'error')
+  }
+}
+
+// ── 更新 ──
+const updateStatus = ref('')
+const updateInfo = ref(null)
+const downloading = ref(false)
+
+async function checkForUpdate() {
+  updateStatus.value = '检查中...'
+  updateInfo.value = null
+  try {
+    const info = await CheckUpdate()
+    if (info.error) {
+      updateStatus.value = '检查失败: ' + info.error
+      return
+    }
+    updateInfo.value = info
+    if (info.has_update) {
+      updateStatus.value = '发现新版本 v' + info.version
+    } else {
+      updateStatus.value = '已是最新版本 v' + info.version
+    }
+  } catch (e) {
+    updateStatus.value = '检查失败: ' + String(e)
+  }
+}
+
+async function doUpdate() {
+  if (!updateInfo.value || !updateInfo.value.download_url) return
+  downloading.value = true
+  updateStatus.value = '正在下载更新...'
+  try {
+    const path = await DownloadUpdate(updateInfo.value.download_url)
+    if (!path) {
+      updateStatus.value = '下载失败'
+      downloading.value = false
+      return
+    }
+    updateStatus.value = '正在应用更新...'
+    await ApplyUpdate(path)
+    // ApplyUpdate 会退出进程，下面的代码通常不会执行
+  } catch (e) {
+    updateStatus.value = '更新失败: ' + String(e)
+    downloading.value = false
+  }
+}
+
 onMounted(() => {
   const s = theme.load()
   themeMode.value = s.theme
@@ -57,6 +145,13 @@ onMounted(() => {
   fontSize.value = s.fontSize
   fontFamily.value = s.fontFamily
   localePref.value = loadLocalePref()
+})
+
+// 切到管理密码分类时检查是否是默认密码
+watch(activeCategory, (cat) => {
+  if (cat === 'password') {
+    checkDefaultPwd()
+  }
 })
 
 function onChange() {
@@ -86,7 +181,7 @@ function onLocaleChange() {
 </script>
 
 <template>
-  <div class="settings-overlay" @click.self="$emit('close')" role="dialog" aria-modal="true" :aria-label="t('settings.title')">
+  <div class="settings-overlay" role="dialog" aria-modal="true" :aria-label="t('settings.title')">
     <div class="settings-modal">
       <div class="modal-header">
         <h2 class="modal-title">{{ t('settings.title') }}</h2>
@@ -205,6 +300,59 @@ function onLocaleChange() {
                   <span class="radio-dot" aria-hidden="true"></span>
                   <span>{{ t('settings.langEn') }}</span>
                 </label>
+              </div>
+            </section>
+          </div>
+
+          <!-- ═══ Password ═══ -->
+          <div v-if="activeCategory === 'password'">
+            <h3 class="content-title">{{ t('settings.password') }}</h3>
+            <p class="content-subtitle">{{ t('settings.passwordSub') }}。</p>
+            <transition name="toast">
+              <div v-if="pwdToast" class="toast" :class="'toast-' + pwdToastType" style="margin-bottom:16px;" role="alert">
+                {{ pwdToast }}
+              </div>
+            </transition>
+            <section class="setting-section" style="max-width:360px;">
+              <p v-if="isDefaultPwd" style="font-size:13px;color:var(--color-warning);margin-bottom:12px;">
+                {{ t('settings.pwdDefaultChangeHint') }}
+              </p>
+              <label v-if="!isDefaultPwd" style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;">
+                <span class="input-label">{{ t('settings.currentPwd') }}</span>
+                <input v-model="pwdOld" class="input" type="password" autocomplete="current-password" />
+              </label>
+              <label style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;">
+                <span class="input-label">{{ t('settings.newPwd') }}</span>
+                <input v-model="pwdNew1" class="input" type="password" autocomplete="new-password" />
+              </label>
+              <label style="display:flex;flex-direction:column;gap:6px;margin-bottom:18px;">
+                <span class="input-label">{{ t('settings.confirmPwd') }}</span>
+                <input v-model="pwdNew2" class="input" type="password" autocomplete="new-password" />
+              </label>
+              <button class="btn btn-primary btn-sm" @click="confirmPwdChange">{{ t('common.save') }}</button>
+            </section>
+          </div>
+
+          <!-- ═══ Update ═══ -->
+          <div v-if="activeCategory === 'update'">
+            <h3 class="content-title">{{ t('settings.update') }}</h3>
+            <p class="content-subtitle">{{ t('settings.updateSub') }}。</p>
+            <section class="setting-section">
+              <button class="btn btn-primary btn-sm" @click="checkForUpdate"
+                      :disabled="downloading">
+                {{ t('settings.checkUpdate') }}
+              </button>
+              <div v-if="updateStatus" style="margin-top:12px;font-size:14px;color:var(--text-secondary);">
+                {{ updateStatus }}
+              </div>
+              <div v-if="updateInfo && updateInfo.has_update" style="margin-top:16px;">
+                <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px;white-space:pre-wrap;max-height:120px;overflow-y:auto;">
+                  {{ updateInfo.release_notes }}
+                </div>
+                <button class="btn btn-success btn-sm" @click="doUpdate"
+                        :disabled="downloading">
+                  {{ downloading ? t('settings.downloading') : t('settings.updateNow') }}
+                </button>
               </div>
             </section>
           </div>
@@ -338,5 +486,12 @@ function onLocaleChange() {
   display: inline-block; font-size: 0.79rem; color: #fff;
   background: var(--color-primary); padding: 1px 8px; border-radius: 4px;
   vertical-align: middle; margin-left: 6px;
+}
+
+.toast-enter-active { animation: slideDown 0.25s ease; }
+.toast-leave-active { animation: slideDown 0.2s ease reverse; }
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 </style>

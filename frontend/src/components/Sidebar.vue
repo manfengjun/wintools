@@ -3,7 +3,7 @@ import { useRoute } from 'vue-router'
 import tools from '../tools.js'
 import { useT } from '../locale.js'
 
-const emit = defineEmits(['show-settings', 'hide-to-tray'])
+const emit = defineEmits(['show-settings'])
 const route = useRoute()
 const t = useT()
 
@@ -44,17 +44,12 @@ function isActive(path) {
 
     <div class="sidebar-footer">
       <button class="footer-btn" @click="$emit('show-settings')" :aria-label="t('nav.settings')" :title="t('nav.settings')">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"/>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
         </svg>
-      </button>
-      <button class="footer-btn" @click="$emit('hide-to-tray')" :aria-label="t('nav.minimize')" :title="t('nav.minimize')">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="2" stroke-linecap="round">
-          <line x1="5" y1="12" x2="19" y2="12"/>
-        </svg>
+        <span class="footer-label">{{ t('nav.settings') }}</span>
       </button>
     </div>
   </nav>
@@ -128,21 +123,21 @@ function isActive(path) {
   gap: 2px;
   padding: 10px 8px;
   border-top: 1px solid var(--sidebar-header-border);
-  justify-content: center;
 }
 .footer-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
+  gap: 8px;
+  padding: 8px 14px;
   border: none;
   border-radius: 8px;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   transition: all var(--transition-fast);
+  width: 100%;
 }
 .footer-btn:hover { background: var(--bg-nav-hover); color: var(--text-secondary); }
 .footer-btn:focus-visible { box-shadow: 0 0 0 2px var(--color-primary); }
+.footer-label { font-size: 13px; }
 </style>

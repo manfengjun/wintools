@@ -7,15 +7,17 @@ import (
 )
 
 type Config struct {
-	MirrorURL string `json:"mirror_url"`
-	PyVersion string `json:"py_version"`
+	MirrorURL    string `json:"mirror_url"`
+	PyVersion    string `json:"py_version"`
 	PyInstallDir string `json:"py_install_dir"`
+	UpdateURL    string `json:"update_url"`
 }
 
 var DefaultConfig = Config{
 	MirrorURL:    "https://pypi.tuna.tsinghua.edu.cn/simple",
 	PyVersion:    "3.12.0",
 	PyInstallDir: "C:\\Python\\3.12",
+	UpdateURL:    "https://api.github.com/repos/jj/wintools/releases/latest",
 }
 
 func ConfigDir() string {

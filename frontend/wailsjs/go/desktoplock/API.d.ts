@@ -5,15 +5,21 @@ import {context} from '../models';
 
 export function Backup():Promise<desktoplock.BackupResult>;
 
+export function ChangeDefaultPassword(arg1:string):Promise<boolean|string>;
+
 export function ChangePassword(arg1:string,arg2:string):Promise<boolean|string>;
 
+export function DeleteBackup(arg1:string):Promise<boolean>;
+
+export function GetBackupIcons():Promise<Record<string, string>>;
+
 export function IsDefaultPassword():Promise<boolean>;
+
+export function ListBackups():Promise<Array<desktoplock.BackupItem>>;
 
 export function Lock():Promise<boolean>;
 
 export function Restore():Promise<desktoplock.RestoreResult>;
-
-export function StartWatcher():Promise<void>;
 
 export function Startup(arg1:context.Context):Promise<void>;
 
