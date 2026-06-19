@@ -144,26 +144,6 @@ function New-Release {
 - 例如: 修复 xxx 问题
 "@
 
-    # 发布到 Gitee
-    try {
-        gh release create $tag "$exe#Wintools_Windows_x86_64.exe" `
-            --title "Wintools $tag" --notes $notes `
-            -R gitee.com/$GiteeOwner/$GiteeRepo 2>&1 | Out-Null
-        Write-Host "   ✅ Gitee release 已创建" -ForegroundColor Green
-    } catch {
-        Write-Warning "   ⚠️ Gitee release 创建失败，尝试 API 上传..."
-        # 用 API 上传附件（Gitee 不支持 gh 时备用）
-        if ($GiteeToken) {
-            $tmpExe = "$env:TEMP\Wintools_Windows_x86_64.exe"
-            Copy-Item $exe $tmpExe -Force
-            $releaseId = (curl -s "https://gitee.com/api/v5/repos/$GiteeOwner/$GiteeRepo/releases?access_token=$GiteeToken&tag_name=$tag" | ConvertFrom-Json).id
-            if ($releaseId) {
-                curl -s -X POST "https://gitee.com/api/v5/repos/$GiteeOwner/$GiteeRepo/releases/$releaseId/attach_files?access_token=$GiteeToken" -F "file=@$tmpExe" | Out-Null
-                Write-Host "   ✅ Gitee 附件已上传" -ForegroundColor Green
-            }
-        }
-    }
-
     # 发布到 GitHub
     try {
         gh release create $tag "$exe#Wintools_Windows_x86_64.exe" `
@@ -172,6 +152,27 @@ function New-Release {
         Write-Host "   ✅ GitHub release 已创建" -ForegroundColor Green
     } catch {
         Write-Warning "   ⚠️ GitHub 发布失败: $_"
+    }
+
+    # 发布到 Gitee（使用 API）
+    try {
+        if (-not $GiteeToken) { throw "GITEE_TOKEN 未设置" }
+
+        # 用 PowerShell 创建 Release（正确处理 UTF-8）
+        $bodyText = $notes -replace "`n", "`n"  # 保留换行
+        $payload = @{tag_name=$tag; name="Wintools $tag"; target_commitish="master"; body=$bodyText} | ConvertTo-Json
+        $uri = "https://gitee.com/api/v5/repos/$GiteeOwner/$GiteeRepo/releases?access_token=$GiteeToken"
+        $result = Invoke-RestMethod $uri -Method Post -ContentType "application/json" -Body ([Text.Encoding]::UTF8.GetBytes($payload))
+
+        # 上传附件
+        $tmpExe = "$env:TEMP\Wintools_Windows_x86_64.exe"
+        Copy-Item $exe $tmpExe -Force
+        $uploadUri = "https://gitee.com/api/v5/repos/$GiteeOwner/$GiteeRepo/releases/$($result.id)/attach_files?access_token=$GiteeToken"
+        $wc = New-Object System.Net.WebClient
+        $wc.UploadFile($uploadUri, $tmpExe) | Out-Null
+        Write-Host "   ✅ Gitee release 已创建" -ForegroundColor Green
+    } catch {
+        Write-Warning "   ⚠️ Gitee 发布失败: $_"
     }
 
     Write-Host "✅ 发布完成: $tag" -ForegroundColor Green

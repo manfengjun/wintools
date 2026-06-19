@@ -71,22 +71,13 @@ def build_base():
 def build_robot_mask():
     mask = Image.new("L", (SIZE, SIZE), 0)
     draw = ImageDraw.Draw(mask)
-    draw.rounded_rectangle((300, 300, 724, 736), radius=156, fill=255)
+    draw.rounded_rectangle((350, 350, 674, 690), radius=120, fill=255)
     return mask
-
-
-def build_code_cut():
-    cut = Image.new("L", (SIZE, SIZE), 0)
-    draw = ImageDraw.Draw(cut)
-    draw.polygon([(440, 566), (530, 628), (440, 690), (494, 690), (592, 628), (494, 566)], fill=255)
-    draw.rounded_rectangle((566, 655, 666, 693), radius=19, fill=255)
-    return cut
 
 
 def build_robot():
     robot_mask = build_robot_mask()
-    cut_mask = build_code_cut()
-    final_mask = ImageChops.subtract(robot_mask, cut_mask)
+    final_mask = robot_mask
 
     shadow_mask = final_mask.filter(ImageFilter.GaussianBlur(22))
     shadow = Image.new("RGBA", (SIZE, SIZE), (71, 31, 139, 0))
@@ -98,24 +89,24 @@ def build_robot():
 
     outline = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     outline_draw = ImageDraw.Draw(outline)
-    outline_draw.rounded_rectangle((300, 300, 724, 736), radius=156, outline=(244, 223, 255, 255), width=4)
+    outline_draw.rounded_rectangle((350, 350, 674, 690), radius=120, outline=(244, 223, 255, 255), width=4)
     outline.putalpha(ImageChops.multiply(outline.getchannel("A"), final_mask))
 
     antennas = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     antennas_draw = ImageDraw.Draw(antennas)
-    antennas_draw.rounded_rectangle((390, 360, 436, 478), radius=23, fill=(255, 255, 255, 255))
-    antennas_draw.rounded_rectangle((588, 360, 634, 478), radius=23, fill=(255, 255, 255, 255))
+    antennas_draw.rounded_rectangle((416, 296, 450, 382), radius=17, fill=(255, 255, 255, 255))
+    antennas_draw.rounded_rectangle((574, 296, 608, 382), radius=17, fill=(255, 255, 255, 255))
 
     eyes = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     eyes_draw = ImageDraw.Draw(eyes)
-    eyes_draw.ellipse((392, 490, 452, 550), fill=(142, 108, 255, 255))
-    eyes_draw.ellipse((572, 490, 632, 550), fill=(142, 108, 255, 255))
+    eyes_draw.ellipse((420, 508, 464, 552), fill=(154, 121, 255, 255))
+    eyes_draw.ellipse((560, 508, 604, 552), fill=(154, 121, 255, 255))
 
-    footer = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-    footer_draw = ImageDraw.Draw(footer)
-    footer_draw.rounded_rectangle((350, 728, 674, 762), radius=17, fill=(230, 219, 255, 184))
+    mouth = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    mouth_draw = ImageDraw.Draw(mouth)
+    mouth_draw.rounded_rectangle((460, 606, 564, 624), radius=9, fill=(176, 141, 255, 255))
 
-    return shadow, robot, outline, antennas, eyes, footer
+    return shadow, robot, outline, antennas, eyes, mouth
 
 
 def make_icon():
