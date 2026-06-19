@@ -6,12 +6,28 @@ export function Backup() {
   return window['go']['desktoplock']['API']['Backup']();
 }
 
+export function ChangeDefaultPassword(arg1) {
+  return window['go']['desktoplock']['API']['ChangeDefaultPassword'](arg1);
+}
+
 export function ChangePassword(arg1, arg2) {
   return window['go']['desktoplock']['API']['ChangePassword'](arg1, arg2);
 }
 
+export function DeleteBackup(arg1) {
+  return window['go']['desktoplock']['API']['DeleteBackup'](arg1);
+}
+
+export function GetBackupIcons() {
+  return window['go']['desktoplock']['API']['GetBackupIcons']();
+}
+
 export function IsDefaultPassword() {
   return window['go']['desktoplock']['API']['IsDefaultPassword']();
+}
+
+export function ListBackups() {
+  return window['go']['desktoplock']['API']['ListBackups']();
 }
 
 export function Lock() {
@@ -20,10 +36,6 @@ export function Lock() {
 
 export function Restore() {
   return window['go']['desktoplock']['API']['Restore']();
-}
-
-export function StartWatcher() {
-  return window['go']['desktoplock']['API']['StartWatcher']();
 }
 
 export function Startup(arg1) {

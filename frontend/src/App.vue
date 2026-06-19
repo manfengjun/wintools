@@ -4,13 +4,57 @@ import Sidebar from './components/Sidebar.vue'
 import SettingsModal from './views/Settings.vue'
 import * as theme from './theme.js'
 import * as locale from './locale.js'
+import { EventsOn } from '../wailsjs/runtime/runtime.js'
+import { VerifyPassword } from '../wailsjs/go/desktoplock/API'
+import { ConfirmQuit } from '../wailsjs/go/main/App'
 
 const showSettings = ref(false)
+const showQuitPwd = ref(false)
+const quitPwdInput = ref('')
+const quitPwdError = ref('')
+const toast = ref('')
+const toastType = ref('info')
+
+function showToast(msg, type = 'info') {
+  toast.value = msg
+  toastType.value = type
+  setTimeout(() => { toast.value = '' }, 4000)
+}
 
 onMounted(() => {
   locale.init()
   theme.init()
+
+  // 监听后端退出请求
+  EventsOn('request-quit', () => {
+    showQuitPwd.value = true
+    quitPwdInput.value = ''
+    quitPwdError.value = ''
+  })
+
+  // 监听后端统一通知
+  EventsOn('notify', (payload) => {
+    if (payload && payload.message) {
+      showToast(payload.message, payload.type || 'info')
+    }
+  })
 })
+
+async function confirmQuitPwd() {
+  const ok = await VerifyPassword(quitPwdInput.value)
+  if (ok) {
+    showQuitPwd.value = false
+    ConfirmQuit()
+  } else {
+    quitPwdError.value = '密码错误'
+  }
+}
+
+function cancelQuit() {
+  showQuitPwd.value = false
+  quitPwdInput.value = ''
+  quitPwdError.value = ''
+}
 
 function openSettings() {
   showSettings.value = true
@@ -19,23 +63,37 @@ function openSettings() {
 function closeSettings() {
   showSettings.value = false
 }
-
-function hideToTray() {
-  if (window.runtime && window.runtime.WindowHide) {
-    window.runtime.WindowHide()
-  } else if (window.runtime && window.runtime.WindowMinimise) {
-    window.runtime.WindowMinimise()
-  }
-}
 </script>
 
 <template>
   <div class="app-layout">
-    <Sidebar @show-settings="openSettings" @hide-to-tray="hideToTray" />
+    <Sidebar @show-settings="openSettings" />
     <main class="main-content">
       <router-view />
     </main>
     <SettingsModal v-if="showSettings" @close="closeSettings" />
+
+    <!-- ═══ 统一 Toast 通知 ═══ -->
+    <transition name="toast">
+      <div v-if="toast" class="toast-global" :class="'toast-' + toastType" role="alert">
+        {{ toast }}
+      </div>
+    </transition>
+
+    <!-- ═══ 退出密码验证弹窗 ═══ -->
+    <div v-if="showQuitPwd" class="overlay" role="dialog" aria-modal="true" aria-label="退出验证">
+      <div class="dialog">
+        <h3>确认退出</h3>
+        <p>请输入管理密码才能退出</p>
+        <input v-model="quitPwdInput" class="input" type="password"
+               placeholder="请输入管理密码" @keyup.enter="confirmQuitPwd" autofocus />
+        <p v-if="quitPwdError" style="margin-top:8px;font-size:13px;color:var(--color-danger);">{{ quitPwdError }}</p>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+          <button class="btn btn-outline btn-sm" @click="cancelQuit">取消</button>
+          <button class="btn btn-primary btn-sm" @click="confirmQuitPwd">退出</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -49,5 +107,31 @@ function hideToTray() {
   flex: 1;
   overflow-y: auto;
   padding: 32px;
+}
+
+/* ── 全局 Toast ── */
+.toast-global {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 300;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  pointer-events: none;
+}
+.toast-success { background: #10b981; color: #fff; }
+.toast-warning { background: #f59e0b; color: #fff; }
+.toast-error { background: #ef4444; color: #fff; }
+.toast-info { background: var(--color-primary); color: #fff; }
+
+.toast-enter-active { animation: slideDown 0.25s ease; }
+.toast-leave-active { animation: slideDown 0.2s ease reverse; }
+@keyframes slideDown {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 </style>

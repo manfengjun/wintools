@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"DesktopSuite/internal/common"
+	"github.com/manfengjun/wintools/internal/common"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 

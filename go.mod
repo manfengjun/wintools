@@ -1,4 +1,4 @@
-module DesktopSuite
+module github.com/manfengjun/wintools
 
 go 1.23.0
 

@@ -1,24 +1,15 @@
 # Build
 build/
-dist/
-*.exe
-*.exe~
-
-# Dependencies
-node_modules/
+frontend/dist/
 frontend/node_modules/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
+frontend/package-lock.json
+frontend/package-lock.json.md5
 
 # OS
 Thumbs.db
 .DS_Store
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
+# IDE
+.idea/
+*.swp
+*.swo
