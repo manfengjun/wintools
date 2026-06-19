@@ -99,12 +99,33 @@ const updateInfo = ref(null)
 const downloading = ref(false)
 const updateURL = ref('')
 const updateURLSaved = ref(false)
+const updatePreset = ref('github')
+
+const updatePresets = [
+  { id: 'github', label: 'GitHub', url: 'https://api.github.com/repos/manfengjun/wintools/releases/latest' },
+  { id: 'gitee', label: 'Gitee', url: 'https://gitee.com/api/v5/repos/manfengjun/wintools/releases/latest' },
+  { id: 'custom', label: '自定义', url: '' },
+]
 
 // 加载更新源配置
 async function loadUpdateURL() {
   try {
-    updateURL.value = await GetUpdateURL()
+    const url = await GetUpdateURL()
+    updateURL.value = url
+    // 匹配预设
+    const matched = updatePresets.find(p => p.url === url)
+    updatePreset.value = matched ? matched.id : 'custom'
   } catch {}
+}
+
+function selectUpdatePreset(presetId) {
+  const preset = updatePresets.find(p => p.id === presetId)
+  if (preset && preset.url) {
+    updatePreset.value = presetId
+    updateURL.value = preset.url
+  } else {
+    updatePreset.value = 'custom'
+  }
 }
 
 async function saveUpdateURL() {
@@ -357,18 +378,23 @@ function onLocaleChange() {
           <div v-if="activeCategory === 'update'">
             <h3 class="content-title">{{ t('settings.update') }}</h3>
             <p class="content-subtitle">{{ t('settings.updateSub') }}。</p>
-            <section class="setting-section" style="max-width:400px;">
-              <div style="margin-bottom:16px;">
-                <span class="input-label">{{ t('settings.updateSource') }}</span>
-                <div style="display:flex;gap:8px;">
-                  <input v-model="updateURL" class="input" placeholder="https://api.github.com/..." style="flex:1;" />
-                  <button class="btn btn-outline btn-sm" @click="saveUpdateURL" style="white-space:nowrap;">
-                    {{ t('common.save') }}
-                  </button>
-                </div>
-                <div v-if="updateURLSaved" style="font-size:12px;color:var(--color-success);margin-top:4px;">
-                  {{ t('common.saved') }}
-                </div>
+            <section class="setting-section" style="max-width:420px;">
+              <span class="section-label">{{ t('settings.updateSource') }}</span>
+              <div style="display:flex;gap:8px;margin-top:8px;margin-bottom:12px;">
+                <button v-for="p in updatePresets" :key="p.id"
+                  class="btn btn-sm" :class="updatePreset === p.id ? 'btn-primary' : 'btn-outline'"
+                  @click="selectUpdatePreset(p.id)">
+                  {{ p.label }}
+                </button>
+              </div>
+              <div v-if="updatePreset === 'custom'" style="display:flex;gap:8px;margin-bottom:12px;">
+                <input v-model="updateURL" class="input" placeholder="https://..." style="flex:1;" />
+                <button class="btn btn-outline btn-sm" @click="saveUpdateURL" style="white-space:nowrap;">
+                  {{ t('common.save') }}
+                </button>
+              </div>
+              <div v-if="updateURLSaved" style="font-size:12px;color:var(--color-success);margin-bottom:8px;">
+                {{ t('common.saved') }}
               </div>
               <button class="btn btn-primary btn-sm" @click="checkForUpdate"
                       :disabled="downloading">
