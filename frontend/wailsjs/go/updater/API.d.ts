@@ -7,3 +7,7 @@ export function ApplyUpdate(arg1:string):Promise<string>;
 export function CheckUpdate():Promise<updater.UpdateInfo>;
 
 export function DownloadUpdate(arg1:string):Promise<string>;
+
+export function GetUpdateURL():Promise<string>;
+
+export function SetUpdateURL(arg1:string):Promise<boolean>;

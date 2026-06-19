@@ -94,6 +94,7 @@ export default {
     aboutSub: '版本与致谢',
     update: '检查更新',
     updateSub: '检测并安装新版本',
+    updateSource: '更新源地址',
     checkUpdate: '检查更新',
     updateNow: '立即更新',
     downloading: '下载中...',

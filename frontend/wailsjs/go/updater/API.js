@@ -13,3 +13,11 @@ export function CheckUpdate() {
 export function DownloadUpdate(arg1) {
   return window['go']['updater']['API']['DownloadUpdate'](arg1);
 }
+
+export function GetUpdateURL() {
+  return window['go']['updater']['API']['GetUpdateURL']();
+}
+
+export function SetUpdateURL(arg1) {
+  return window['go']['updater']['API']['SetUpdateURL'](arg1);
+}

@@ -91,6 +91,7 @@ export default {
     aboutSub: 'Version & credits',
     update: 'Check Update',
     updateSub: 'Check and install new version',
+    updateSource: 'Update Source URL',
     checkUpdate: 'Check Update',
     updateNow: 'Update Now',
     downloading: 'Downloading...',
