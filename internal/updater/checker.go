@@ -19,7 +19,7 @@ import (
 
 const (
 	CurrentVersion = "1.0.0"
-	DefaultCheckURL = "https://api.github.com/repos/manfengjun/wintools/releases/latest"
+	DefaultCheckURL = "https://gitee.com/api/v5/repos/manfengjun/wintools/releases/latest"
 )
 
 // UpdateInfo 更新检测结果
@@ -87,7 +87,7 @@ func Check() UpdateInfo {
 
 	if resp.StatusCode == http.StatusNotFound {
 		return UpdateInfo{HasUpdate: false, Version: CurrentVersion,
-			Error: "未找到更新源，请确保项目已发布到 GitHub Releases"}
+			Error: "未找到更新源，请确保项目已发布到 Releases"}
 	}
 	if resp.StatusCode != http.StatusOK {
 		return UpdateInfo{Error: fmt.Sprintf("服务器返回 %d", resp.StatusCode)}
