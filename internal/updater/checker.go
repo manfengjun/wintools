@@ -115,11 +115,22 @@ func Check() UpdateInfo {
 	}
 
 	dlURL := ""
+	// 优先找平台匹配的 asset
 	for _, asset := range release.Assets {
 		name := strings.ToLower(asset.Name)
-		if strings.HasSuffix(name, ".exe") || strings.HasSuffix(name, ".zip") {
+		if strings.Contains(name, "windows_x86_64") || strings.Contains(name, "windows_amd64") {
 			dlURL = asset.BrowserDownloadURL
 			break
+		}
+	}
+	// 没有平台匹配，fallback 到任意 exe/zip
+	if dlURL == "" {
+		for _, asset := range release.Assets {
+			name := strings.ToLower(asset.Name)
+			if strings.HasSuffix(name, ".exe") || strings.HasSuffix(name, ".zip") {
+				dlURL = asset.BrowserDownloadURL
+				break
+			}
 		}
 	}
 
