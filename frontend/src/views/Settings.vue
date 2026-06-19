@@ -99,11 +99,11 @@ const updateInfo = ref(null)
 const downloading = ref(false)
 const updateURL = ref('')
 const updateURLSaved = ref(false)
-const updatePreset = ref('github')
+const updatePreset = ref('gitee')
 
 const updatePresets = [
-  { id: 'github', label: 'GitHub', url: 'https://api.github.com/repos/manfengjun/wintools/releases/latest' },
   { id: 'gitee', label: 'Gitee', url: 'https://gitee.com/api/v5/repos/manfengjun/wintools/releases/latest' },
+  { id: 'github', label: 'GitHub', url: 'https://api.github.com/repos/manfengjun/wintools/releases/latest' },
   { id: 'custom', label: '自定义', url: '' },
 ]
 
@@ -424,6 +424,14 @@ function onLocaleChange() {
                 <div><strong>{{ t('app.name') }}</strong> <span class="version-tag">{{ t('about.version') }}</span></div>
                 <div style="color:var(--text-muted);font-size:13px;">{{ t('app.tagline') }}</div>
                 <div style="color:var(--text-muted);font-size:13px;margin-top:8px;">{{ t('settings.aboutBuiltWith') }}</div>
+                <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-default);font-size:13px;">
+                  <div style="color:var(--text-secondary);">© 2026 manfengjun</div>
+                  <div style="color:var(--text-muted);margin-top:4px;">
+                    <a href="https://github.com/manfengjun/wintools" target="_blank" rel="noopener"
+                       style="color:var(--color-primary);text-decoration:none;">github.com/manfengjun/wintools</a>
+                  </div>
+                  <div style="color:var(--text-muted);margin-top:4px;">微信: asd3672830</div>
+                </div>
               </div>
             </section>
           </div>

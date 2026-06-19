@@ -17,7 +17,7 @@ var DefaultConfig = Config{
 	MirrorURL:    "https://pypi.tuna.tsinghua.edu.cn/simple",
 	PyVersion:    "3.12.0",
 	PyInstallDir: "C:\\Python\\3.12",
-	UpdateURL:    "https://api.github.com/repos/manfengjun/wintools/releases/latest",
+	UpdateURL:    "https://gitee.com/api/v5/repos/manfengjun/wintools/releases/latest",
 }
 
 func ConfigDir() string {
