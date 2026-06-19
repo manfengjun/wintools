@@ -3,7 +3,7 @@ import { ref, onMounted, watch } from 'vue'
 import * as theme from '../theme.js'
 import { useT, setLocale, getLocale, detectLanguage, loadLocalePref } from '../locale.js'
 import { VerifyPassword, ChangePassword, ChangeDefaultPassword, IsDefaultPassword } from '../../wailsjs/go/desktoplock/API'
-import { CheckUpdate, DownloadUpdate, ApplyUpdate } from '../../wailsjs/go/updater/API'
+import { CheckUpdate, DownloadUpdate, ApplyUpdate, GetUpdateURL, SetUpdateURL } from '../../wailsjs/go/updater/API'
 
 const emit = defineEmits(['close'])
 
@@ -97,6 +97,23 @@ async function confirmPwdChange() {
 const updateStatus = ref('')
 const updateInfo = ref(null)
 const downloading = ref(false)
+const updateURL = ref('')
+const updateURLSaved = ref(false)
+
+// 加载更新源配置
+async function loadUpdateURL() {
+  try {
+    updateURL.value = await GetUpdateURL()
+  } catch {}
+}
+
+async function saveUpdateURL() {
+  try {
+    const ok = await SetUpdateURL(updateURL.value)
+    updateURLSaved.value = ok
+    setTimeout(() => { updateURLSaved.value = false }, 2000)
+  } catch {}
+}
 
 async function checkForUpdate() {
   updateStatus.value = '检查中...'
@@ -151,6 +168,9 @@ onMounted(() => {
 watch(activeCategory, (cat) => {
   if (cat === 'password') {
     checkDefaultPwd()
+  }
+  if (cat === 'update') {
+    loadUpdateURL()
   }
 })
 
@@ -337,7 +357,19 @@ function onLocaleChange() {
           <div v-if="activeCategory === 'update'">
             <h3 class="content-title">{{ t('settings.update') }}</h3>
             <p class="content-subtitle">{{ t('settings.updateSub') }}。</p>
-            <section class="setting-section">
+            <section class="setting-section" style="max-width:400px;">
+              <div style="margin-bottom:16px;">
+                <span class="input-label">{{ t('settings.updateSource') }}</span>
+                <div style="display:flex;gap:8px;">
+                  <input v-model="updateURL" class="input" placeholder="https://api.github.com/..." style="flex:1;" />
+                  <button class="btn btn-outline btn-sm" @click="saveUpdateURL" style="white-space:nowrap;">
+                    {{ t('common.save') }}
+                  </button>
+                </div>
+                <div v-if="updateURLSaved" style="font-size:12px;color:var(--color-success);margin-top:4px;">
+                  {{ t('common.saved') }}
+                </div>
+              </div>
               <button class="btn btn-primary btn-sm" @click="checkForUpdate"
                       :disabled="downloading">
                 {{ t('settings.checkUpdate') }}
