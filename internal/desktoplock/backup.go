@@ -19,8 +19,8 @@ func appDataDir() string {
 	return filepath.Join(d, "DesktopSuite")
 }
 
-func configPath() string   { return filepath.Join(appDataDir(), "lock-config.json") }
-func backupDir() string    { return filepath.Join(appDataDir(), "lock-backup") }
+func configPath() string { return filepath.Join(appDataDir(), "lock-config.json") }
+func backupDir() string  { return filepath.Join(appDataDir(), "lock-backup") }
 
 // scanDesktopShortcuts 扫描桌面，返回所有 .lnk / .url 文件名。
 // 使用 os.Open + Readdirnames（避免 os.ReadDir 的 DirEntry.Info 在部分 Windows 上报错）。
@@ -97,7 +97,11 @@ func (a *API) Backup() BackupResult {
 			skipped++
 			continue
 		}
-		os.WriteFile(dst, data, 0644)
+
+		if err := os.WriteFile(dst, data, 0644); err != nil {
+			skipped++
+			continue
+		}
 		ok++
 	}
 
@@ -145,9 +149,13 @@ func (a *API) Restore() RestoreResult {
 // ListBackups 返回备份文件列表。
 func (a *API) ListBackups() []BackupItem {
 	files := scanBackupDir()
+	return buildBackupItems(backupDir(), files, iconDataURL)
+}
+
+func buildBackupItems(dir string, files []string, readIcon func(string) string) []BackupItem {
 	items := make([]BackupItem, 0, len(files))
 	for _, name := range files {
-		path := filepath.Join(backupDir(), name)
+		path := filepath.Join(dir, name)
 		info, err := os.Stat(path)
 		var size int64
 		modTime := ""
@@ -156,9 +164,10 @@ func (a *API) ListBackups() []BackupItem {
 			modTime = info.ModTime().Format("2006-01-02 15:04:05")
 		}
 		items = append(items, BackupItem{
-			Name:    name,
-			Size:    size,
-			ModTime: modTime,
+			Name:       name,
+			Size:       size,
+			ModTime:    modTime,
+			IconBase64: readIcon(path),
 		})
 	}
 	return items

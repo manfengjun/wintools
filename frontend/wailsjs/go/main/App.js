@@ -5,3 +5,11 @@
 export function ConfirmQuit() {
   return window['go']['main']['App']['ConfirmQuit']();
 }
+
+export function IsAutoStart() {
+  return window['go']['main']['App']['IsAutoStart']();
+}
+
+export function SetAutoStart(arg1) {
+  return window['go']['main']['App']['SetAutoStart'](arg1);
+}

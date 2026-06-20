@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	CurrentVersion = "1.0.0"
+	CurrentVersion = "1.0.1"
 	DefaultCheckURL = "https://gitee.com/api/v5/repos/3672830/wintools/releases/latest"
 )
 
@@ -207,3 +207,4 @@ del /f /q "%%~f0"
 	os.Exit(0)
 	return ""
 }
+

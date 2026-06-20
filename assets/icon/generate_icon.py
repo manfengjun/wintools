@@ -99,12 +99,12 @@ def build_robot():
 
     eyes = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     eyes_draw = ImageDraw.Draw(eyes)
-    eyes_draw.ellipse((420, 508, 464, 552), fill=(154, 121, 255, 255))
-    eyes_draw.ellipse((560, 508, 604, 552), fill=(154, 121, 255, 255))
+    eyes_draw.ellipse((422, 510, 462, 550), fill=(164, 135, 255, 255))
+    eyes_draw.ellipse((562, 510, 602, 550), fill=(164, 135, 255, 255))
 
     mouth = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     mouth_draw = ImageDraw.Draw(mouth)
-    mouth_draw.rounded_rectangle((460, 606, 564, 624), radius=9, fill=(176, 141, 255, 255))
+    mouth_draw.rounded_rectangle((472, 608, 552, 624), radius=8, fill=(183, 155, 255, 255))
 
     return shadow, robot, outline, antennas, eyes, mouth
 

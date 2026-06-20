@@ -134,6 +134,10 @@ export default {
     langAuto: 'Follow system',
     langZh: '中文',
     langEn: 'English',
+    startup: 'Startup',
+    startupSub: 'Auto start on boot',
+    autoStart: 'Start on boot',
+    autoStartDesc: 'Automatically start CodePower Studio when you log in to Windows',
   },
 
   about: {

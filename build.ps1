@@ -1,8 +1,8 @@
-<#
+﻿<#
 .SYNOPSIS
     码力工坊 一键构建发布脚本
 .DESCRIPTION
-    - build        : 本地构建 (wails build)
+    - build        : 构建 NSIS 安装包（内嵌 WebView2 联网引导程序）
     - bump <type>  : 升级版本号 (major/minor/patch)
     - tag <ver>    : 打标签并推送 (git tag v1.0.x && git push)
     - release <ver>: 发布到 Gitee + GitHub Releases
@@ -13,6 +13,10 @@
         .\build.ps1 bump patch     # 版本号 v1.0.0 → v1.0.1
         .\build.ps1 release v1.0.1 # 构建 + 发布 Release
         .\build.ps1 all patch      # 全自动：bump→build→tag→release
+
+    环境变量:
+        GITEE_TOKEN    [必需] 用于发布到 Gitee Releases
+        GITHUB_TOKEN   [可选] gh CLI 自动使用已登录的 GitHub CLI 会话
 #>
 
 param(
@@ -22,21 +26,26 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$ProjectDir = Split-Path $PSScriptRoot -Parent
+$ProjectDir = $PSScriptRoot
 
-# ── Gitee Token (从环境变量读取，或在此设置) ──────────────
-# 设置环境变量: $env:GITEE_TOKEN = "你的token"
+# ── Gitee Token ──────────────────────────────────────────
+# 必须通过环境变量 GITEE_TOKEN 提供
 $GiteeToken = $env:GITEE_TOKEN
-if (-not $GiteeToken) {
-    # 尝试从 git credential 读取
-    try {
-        $GiteeToken = (git credential-manager get 2>$null | Out-String | Select-String "password=(.+)").Matches.Groups[1].Value
-    } catch {}
-}
 $GiteeOwner = "3672830"
 $GiteeRepo = "wintools"
 
-# ── 版本号管理 ──────────────────────────────────────────────
+# 获取当前仓库的默认分支名（支持 main / master / 其他）
+function Get-DefaultBranch {
+    $remote = git remote 2>$null | Select-Object -First 1
+    if (-not $remote) { return "main" }
+    $head = git remote show $remote 2>$null | Select-String "HEAD branch:" | ForEach-Object {
+        $_.ToString().Split(":")[1].Trim()
+    }
+    if (-not $head) { $head = "main" }
+    return $head
+}
+
+# ── 版本号管理 ──────────────────────────────────────────
 
 $VersionFile = "$ProjectDir\internal\updater\checker.go"
 
@@ -52,6 +61,8 @@ function Bump-Version {
     param([string]$BumpType)
     $ver = Get-CurrentVersion
     $parts = $ver.Split('.')
+    # 补齐到 3 段，避免版本号格式缩水
+    while ($parts.Count -lt 3) { $parts += "0" }
     $major = [int]$parts[0]
     $minor = [int]$parts[1]
     $patch = [int]$parts[2]
@@ -68,38 +79,79 @@ function Bump-Version {
     # 更新 checker.go
     $content = Get-Content $VersionFile -Raw
     $content = $content -replace 'CurrentVersion\s*=\s*"[^"]+"', "CurrentVersion = `"$newVer`""
-    Set-Content $VersionFile -Value $content -NoNewline
+    Set-Content $VersionFile -Value $content -Encoding UTF8
 
-    # 更新 README 中的版本引用 (不做精确匹配，仅提示)
     Write-Host "  已更新 internal/updater/checker.go" -ForegroundColor Green
     return $newVer
 }
 
-# ── 构建 ────────────────────────────────────────────────────
+# ── 构建 ────────────────────────────────────────────────
+
+function Get-InstallerArtifact {
+    $installer = Get-ChildItem "$ProjectDir\build\bin" -Filter "*installer*.exe" -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if (-not $installer) {
+        return $null
+    }
+    return $installer
+}
+
+function Initialize-NSIS {
+    if (Get-Command makensis -ErrorAction SilentlyContinue) {
+        return
+    }
+
+    $knownPaths = @(
+            "$env:ProgramFiles\NSIS",
+            "${env:ProgramFiles(x86)}\NSIS",
+            "$env:LOCALAPPDATA\WintoolsBuildTools\NSIS\Bin"
+        ) | Where-Object { $_ -and (Test-Path (Join-Path $_ 'makensis.exe')) }
+
+    if ($knownPaths.Count -gt 0) {
+        $env:PATH = "$($knownPaths[0]);$env:PATH"
+        return
+    }
+
+    throw "缺少 NSIS（makensis）。请先安装 NSIS 并重新运行；下载地址: https://nsis.sourceforge.io/Download"
+}
 
 function Invoke-Build {
-    Write-Host "🔨 构建中..." -ForegroundColor Cyan
+    Write-Host "🔨 构建 NSIS 安装包（WebView2 在线引导）..." -ForegroundColor Cyan
     $ver = Get-CurrentVersion
+    Initialize-NSIS
     Push-Location $ProjectDir
     try {
-        wails build
-        Write-Host "✅ 构建成功: $ver" -ForegroundColor Green
-        $exe = "build\bin\Wintools.exe"
-        if (Test-Path $exe) {
-            $size = (Get-Item $exe).Length / 1MB
-            Write-Host "   输出: $exe ({0:N1} MB)" -f $size -ForegroundColor Green
+        # 清理前次构建的安装包
+        Remove-Item -Path "$ProjectDir\build\bin\*installer*.exe" -Force -ErrorAction SilentlyContinue
+
+        wails build -nsis -webview2 embed
+        if ($LASTEXITCODE -ne 0) {
+            throw "wails build 失败，退出码: $LASTEXITCODE"
         }
+
+        $exe = Get-Item "build\bin\Wintools.exe" -ErrorAction Stop
+        $installer = Get-InstallerArtifact
+        if (-not $installer) {
+            throw "未找到 NSIS 安装包（build\bin\*installer*.exe）"
+        }
+
+        Write-Host "✅ 构建成功: $ver" -ForegroundColor Green
+        Write-Host ("   调试程序: {0} ({1:N1} MB)" -f $exe.FullName, ($exe.Length / 1MB)) -ForegroundColor DarkGreen
+        Write-Host ("   发布安装包: {0} ({1:N1} MB)" -f $installer.FullName, ($installer.Length / 1MB)) -ForegroundColor Green
+        return $installer.FullName
     } finally {
         Pop-Location
     }
 }
 
-# ── Git Tag ─────────────────────────────────────────────────
+# ── Git Tag ─────────────────────────────────────────────
 
 function Invoke-Tag {
     param([string]$Version)
     if (-not $Version) { $Version = Get-CurrentVersion }
     $tag = "v$Version"
+    $defaultBranch = Get-DefaultBranch
 
     Push-Location $ProjectDir
     try {
@@ -112,9 +164,9 @@ function Invoke-Tag {
         # 推送到所有 remote
         git remote | ForEach-Object {
             try {
-                git push $_ master 2>&1 | Out-Null
+                git push $_ $defaultBranch 2>&1 | Out-Null
                 git push $_ $tag 2>&1 | Out-Null
-                Write-Host "   ✅ 推送到 $_" -ForegroundColor Green
+                Write-Host "   ✅ 推送到 $_ ($defaultBranch)" -ForegroundColor Green
             } catch {
                 Write-Warning "   ⚠️ 推送 $_ 失败: $_"
             }
@@ -124,29 +176,45 @@ function Invoke-Tag {
     }
 }
 
-# ── Release ─────────────────────────────────────────────────
+# ── Release ─────────────────────────────────────────────
+
+function Get-ReleaseNotes {
+    <#
+    .SYNOPSIS
+        从 git log 自动生成 Release notes。
+        从上个 tag 到 HEAD 收集 commit 消息；无 tag 时返回初始版本提示。
+    #>
+    $lastTag = git describe --tags --abbrev=0 2>$null
+    if ($lastTag) {
+        $log = git log "$lastTag..HEAD" --format="* %s" 2>$null
+        if ($log) {
+            return "## 更新内容`n`n$log"
+        }
+    }
+    return "## 更新内容`n`n- 各项改进与修复"
+}
 
 function New-Release {
     param([string]$Version)
     if (-not $Version) { $Version = Get-CurrentVersion }
     $tag = "v$Version"
-    $exe = "$ProjectDir\build\bin\Wintools.exe"
+    $installer = Get-InstallerArtifact
 
-    if (-not (Test-Path $exe)) {
-        Write-Host "⚠️ 未找到构建产物，先运行 build" -ForegroundColor Yellow
-        Invoke-Build
+    if (-not $installer) {
+        Write-Host "⚠️ 未找到 NSIS 安装包，先运行 build" -ForegroundColor Yellow
+        Invoke-Build | Out-Null
+        $installer = Get-InstallerArtifact
+    }
+    if (-not $installer) {
+        throw "构建完成后仍未找到 NSIS 安装包"
     }
 
     Write-Host "📦 发布 $tag ..." -ForegroundColor Cyan
-    $notes = @"
-更新说明:
-- 请在此处填写更新内容
-- 例如: 修复 xxx 问题
-"@
+    $notes = Get-ReleaseNotes
 
     # 发布到 GitHub
     try {
-        gh release create $tag "$exe#Wintools_Windows_x86_64.exe" `
+        gh release create $tag "$($installer.FullName)#Wintools_Windows_x86_64_Setup.exe" `
             --title "Wintools $tag" --notes $notes `
             -R github.com/manfengjun/wintools 2>&1 | Out-Null
         Write-Host "   ✅ GitHub release 已创建" -ForegroundColor Green
@@ -154,19 +222,18 @@ function New-Release {
         Write-Warning "   ⚠️ GitHub 发布失败: $_"
     }
 
-    # 发布到 Gitee（使用 API）
+    # 发布到 Gitee（需要 GITEE_TOKEN）
     try {
-        if (-not $GiteeToken) { throw "GITEE_TOKEN 未设置" }
+        if (-not $GiteeToken) { throw "环境变量 GITEE_TOKEN 未设置，请在运行前设置: `$env:GITEE_TOKEN = 'your_token'" }
 
-        # 用 PowerShell 创建 Release（正确处理 UTF-8）
-        $bodyText = $notes -replace "`n", "`n"  # 保留换行
-        $payload = @{tag_name=$tag; name="Wintools $tag"; target_commitish="master"; body=$bodyText} | ConvertTo-Json
+        $bodyText = $notes -replace "`n", "`n"
+        $payload = @{tag_name=$tag; name="Wintools $tag"; target_commitish=(Get-DefaultBranch); body=$bodyText} | ConvertTo-Json
         $uri = "https://gitee.com/api/v5/repos/$GiteeOwner/$GiteeRepo/releases?access_token=$GiteeToken"
         $result = Invoke-RestMethod $uri -Method Post -ContentType "application/json" -Body ([Text.Encoding]::UTF8.GetBytes($payload))
 
         # 上传附件
-        $tmpExe = "$env:TEMP\Wintools_Windows_x86_64.exe"
-        Copy-Item $exe $tmpExe -Force
+        $tmpExe = "$env:TEMP\Wintools_Windows_x86_64_Setup.exe"
+        Copy-Item $installer.FullName $tmpExe -Force
         $uploadUri = "https://gitee.com/api/v5/repos/$GiteeOwner/$GiteeRepo/releases/$($result.id)/attach_files?access_token=$GiteeToken"
         $wc = New-Object System.Net.WebClient
         $wc.UploadFile($uploadUri, $tmpExe) | Out-Null
@@ -178,7 +245,7 @@ function New-Release {
     Write-Host "✅ 发布完成: $tag" -ForegroundColor Green
 }
 
-# ── 主流程 ──────────────────────────────────────────────────
+# ── 主流程 ──────────────────────────────────────────────
 
 switch ($Command) {
     'build' {
