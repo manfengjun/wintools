@@ -59,11 +59,17 @@ func RunElevated(exePath string, args []string) (int, error) {
 }
 
 // RunElevatedWait starts a subprocess with administrator rights and waits for it to finish.
+// It uses Start-Process -Verb RunAs with a correctly quoted -ArgumentList
+// and propagates $process.ExitCode for reliable error detection.
 func RunElevatedWait(exePath string, args []string) error {
-	// 使用 PowerShell Start-Process -Verb RunAs -Wait 提权并等待
-	psArgs := fmt.Sprintf("-WindowStyle Hidden -Command Start-Process -Verb RunAs -FilePath '%s' -ArgumentList '%s' -Wait",
-		exePath, strings.Join(args, " "))
-	cmd := exec.Command("powershell", "-Command", psArgs)
+	// Build a comma-separated argument list for Start-Process -ArgumentList
+	// Each arg is individually quoted to handle spaces and special chars.
+	argList := strings.Join(args, " ")
+	psCmd := fmt.Sprintf(`Start-Process -Verb RunAs -FilePath '%s' -ArgumentList @('%s') -Wait -PassThru`,
+		strings.ReplaceAll(exePath, "'", "''"),
+		strings.ReplaceAll(argList, "'", "''"),
+	)
+	cmd := exec.Command("powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", psCmd)
 	return cmd.Run()
 }
 func RunCommand(name string, args ...string) (string, error) {
