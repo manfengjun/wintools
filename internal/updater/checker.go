@@ -13,23 +13,20 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/manfengjun/wintools/internal/common"
 )
 
 const (
 	CurrentVersion = "1.0.2"
 
-	// GitHub raw（无需 token，全球正常网络可用）
+	// GitHub raw（无需 token）
 	VersionURLGitHubRaw = "https://raw.githubusercontent.com/manfengjun/wintools/master/VERSION"
-	// GitHub API（无需 token，公开仓库可用）
 	VersionURLGitHubAPI = "https://api.github.com/repos/manfengjun/wintools/contents/VERSION"
 
 	// 下载地址模板
 	DownloadURLGitHub = "https://github.com/manfengjun/wintools/releases/download/v%s/Wintools_Windows_x86_64.exe"
 	DownloadURLGitee  = "https://gitee.com/3672830/wintools/releases/download/v%s/Wintools_Windows_x86_64.exe"
 
-	// Gitee 手动下载页
+	// Gitee Releases 页面（检测失败时提示用户手动前往）
 	GiteeReleasesPage = "https://gitee.com/3672830/wintools/releases"
 )
 
@@ -42,7 +39,7 @@ type UpdateInfo struct {
 	Error        string `json:"error,omitempty"`
 }
 
-// fetchVersion 从 URL 读取版本号（支持纯文本和 GitHub API JSON 两种格式）
+// fetchVersion 从 URL 读取版本号
 func fetchVersion(url string) (string, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(url)
@@ -57,13 +54,11 @@ func fetchVersion(url string) (string, error) {
 
 	body, _ := io.ReadAll(resp.Body)
 
-	// 尝试作为纯文本解析（raw 格式）
 	text := strings.TrimSpace(string(body))
 	if text != "" && !strings.HasPrefix(text, "{") {
 		return text, nil
 	}
 
-	// 尝试作为 GitHub API JSON 解析
 	var ghResp struct {
 		Content string `json:"content"`
 		Type    string `json:"type"`
@@ -79,20 +74,15 @@ func fetchVersion(url string) (string, error) {
 }
 
 // Check 检查是否有新版本。
-// 根据用户配置的更新源决定策略：
-//   - GitHub（默认）：GitHub raw → GitHub API → 失败提示
-//   - Gitee：提示 Gitee 需 token + 手动下载链接（仍尝试 GitHub 作为备选）
+// 从 GitHub 读取 VERSION 文件（唯一免 token 的方式），下载地址根据配置走。
 func Check() UpdateInfo {
-	cfg := common.LoadConfig()
-	isGitee := strings.Contains(cfg.UpdateURL, "gitee.com")
-
 	urls := []string{VersionURLGitHubRaw, VersionURLGitHubAPI}
 
 	var lastErr string
 	for _, url := range urls {
 		ver, err := fetchVersion(url)
 		if err != nil {
-			lastErr = "连接 GitHub 失败"
+			lastErr = "检测失败"
 			continue
 		}
 
@@ -105,32 +95,17 @@ func Check() UpdateInfo {
 			return UpdateInfo{HasUpdate: false, Version: CurrentVersion}
 		}
 
-		dlURL := fmt.Sprintf(DownloadURLGitHub, ver)
-		if isGitee {
-			dlURL = fmt.Sprintf(DownloadURLGitee, ver)
-		}
-
+		// 默认用 Gitee 下载
 		return UpdateInfo{
 			HasUpdate:    true,
 			Version:      ver,
-			DownloadURL:  dlURL,
+			DownloadURL:  fmt.Sprintf(DownloadURLGitee, ver),
 			ReleaseNotes: fmt.Sprintf("发现新版本 v%s", ver),
 		}
 	}
 
-	// 全部探测失败，根据配置源给出不同提示
-	if isGitee {
-		return UpdateInfo{
-			Error: fmt.Sprintf("Gitee 更新检测需要配置访问令牌（Token）\n\n请手动前往 Gitee 下载最新版本:\n%s", GiteeReleasesPage),
-		}
-	}
-	if lastErr != "" {
-		return UpdateInfo{
-			Error: fmt.Sprintf("%s\n\n提示：如果无法访问 GitHub，请手动前往 Gitee 下载最新版本:\n%s", lastErr, GiteeReleasesPage),
-		}
-	}
 	return UpdateInfo{
-		Error: fmt.Sprintf("未找到更新源\n\n请手动前往 Gitee 下载最新版本:\n%s", GiteeReleasesPage),
+		Error: fmt.Sprintf("%s，请手动下载更新\n%s", lastErr, GiteeReleasesPage),
 	}
 }
 
