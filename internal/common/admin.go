@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -57,7 +58,14 @@ func RunElevated(exePath string, args []string) (int, error) {
 	return 0, nil
 }
 
-// RunCommand executes a command and returns stdout + stderr.
+// RunElevatedWait starts a subprocess with administrator rights and waits for it to finish.
+func RunElevatedWait(exePath string, args []string) error {
+	// 使用 PowerShell Start-Process -Verb RunAs -Wait 提权并等待
+	psArgs := fmt.Sprintf("-WindowStyle Hidden -Command Start-Process -Verb RunAs -FilePath '%s' -ArgumentList '%s' -Wait",
+		exePath, strings.Join(args, " "))
+	cmd := exec.Command("powershell", "-Command", psArgs)
+	return cmd.Run()
+}
 func RunCommand(name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	out, err := cmd.CombinedOutput()
