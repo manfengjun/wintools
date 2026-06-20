@@ -36,7 +36,7 @@ func (a *API) GetUpdateURL() string {
 	if cfg.UpdateURL != "" {
 		return cfg.UpdateURL
 	}
-	return VersionURLGitHub
+	return VersionURLGitHubRaw
 }
 
 // SetUpdateURL 设置更新源 URL

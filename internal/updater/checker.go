@@ -1,6 +1,8 @@
 package updater
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,20 +13,22 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/manfengjun/wintools/internal/common"
 )
 
 const (
 	CurrentVersion = "1.0.1"
 
-	// VERSION 文件地址（无需 API、无需 token，raw 直连）
-	VersionURLGitHub = "https://raw.githubusercontent.com/manfengjun/wintools/master/VERSION"
-	VersionURLGitee  = "https://gitee.com/3672830/wintools/raw/master/VERSION"
+	// GitHub raw（无需 token，全球正常网络可用）
+	VersionURLGitHubRaw = "https://raw.githubusercontent.com/manfengjun/wintools/master/VERSION"
+	// GitHub API（无需 token，公开仓库可用）
+	VersionURLGitHubAPI = "https://api.github.com/repos/manfengjun/wintools/contents/VERSION"
 
-	// 下载地址模板（根据版本号拼接）
+	// 下载地址模板
 	DownloadURLGitHub = "https://github.com/manfengjun/wintools/releases/download/v%s/Wintools_Windows_x86_64.exe"
 	DownloadURLGitee  = "https://gitee.com/3672830/wintools/releases/download/v%s/Wintools_Windows_x86_64.exe"
+
+	// Gitee 手动下载页（当网络不通时提示用户）
+	GiteeReleasesPage = "https://gitee.com/3672830/wintools/releases"
 )
 
 // UpdateInfo 更新检测结果
@@ -36,9 +40,9 @@ type UpdateInfo struct {
 	Error        string `json:"error,omitempty"`
 }
 
-// fetchVersion 从 URL 读取 VERSION 文件，返回版本号字符串。
+// fetchVersion 从 URL 读取版本号（支持纯文本和 GitHub API JSON 两种格式）
 func fetchVersion(url string) (string, error) {
-	client := &http.Client{Timeout: 8 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
 		return "", err
@@ -49,27 +53,33 @@ func fetchVersion(url string) (string, error) {
 		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
+	body, _ := io.ReadAll(resp.Body)
+
+	// 尝试作为纯文本解析（raw 格式）
+	text := strings.TrimSpace(string(body))
+	if text != "" && !strings.HasPrefix(text, "{") {
+		return text, nil
 	}
-	return strings.TrimSpace(string(data)), nil
+
+	// 尝试作为 GitHub API JSON 解析
+	var ghResp struct {
+		Content string `json:"content"`
+		Type    string `json:"type"`
+	}
+	if err := json.Unmarshal(body, &ghResp); err == nil && ghResp.Type == "file" {
+		decoded, err := base64.StdEncoding.DecodeString(ghResp.Content)
+		if err == nil {
+			return strings.TrimSpace(string(decoded)), nil
+		}
+	}
+
+	return "", fmt.Errorf("无法解析响应")
 }
 
 // Check 检查是否有新版本。
-// 依次尝试 GitHub raw → Gitee raw 读取 VERSION 文件，无需 API、无需 token。
+// 依次尝试：GitHub raw → GitHub API → 给出 Gitee 手动下载指引。
 func Check() UpdateInfo {
-	// 获取更新源配置（用于用户自定义，非必需）
-	cfg := common.LoadConfig()
-
-	// 根据配置决定优先尝试哪个源
-	urls := []string{VersionURLGitHub, VersionURLGitee}
-	if cfg.UpdateURL != "" {
-		// 如果用户配置了自定义源，优先尝试
-		if strings.Contains(cfg.UpdateURL, "gitee.com") {
-			urls = []string{VersionURLGitee, VersionURLGitHub}
-		}
-	}
+	urls := []string{VersionURLGitHubRaw, VersionURLGitHubAPI}
 
 	var lastErr string
 	for _, url := range urls {
@@ -79,41 +89,34 @@ func Check() UpdateInfo {
 			continue
 		}
 
-		// 解析版本号
 		ver = strings.TrimPrefix(ver, "v")
 		if ver == "" {
 			continue
 		}
 
 		if !greaterVersion(ver, CurrentVersion) {
-			// 已是最新
 			return UpdateInfo{HasUpdate: false, Version: CurrentVersion}
-		}
-
-		// 有新版本，根据数据来源构造下载地址
-		dlURL := fmt.Sprintf(DownloadURLGitHub, ver)
-		if strings.Contains(url, "gitee.com") {
-			dlURL = fmt.Sprintf(DownloadURLGitee, ver)
 		}
 
 		return UpdateInfo{
 			HasUpdate:    true,
 			Version:      ver,
-			DownloadURL:  dlURL,
-			ReleaseNotes: fmt.Sprintf("发现新版本 v%s，点击下载更新。", ver),
+			DownloadURL:  fmt.Sprintf(DownloadURLGitHub, ver),
+			ReleaseNotes: fmt.Sprintf("发现新版本 v%s", ver),
 		}
 	}
 
-	// 全部失败
 	if lastErr != "" {
-		return UpdateInfo{Error: lastErr}
+		return UpdateInfo{
+			Error: fmt.Sprintf("%s\n\n提示：如果无法访问 GitHub，请手动前往 Gitee 下载:\n%s", lastErr, GiteeReleasesPage),
+		}
 	}
 	return UpdateInfo{
-		Error: "未找到更新源，请确认网络连接正常",
+		Error: fmt.Sprintf("未找到更新源\n\n请手动前往 Gitee 下载:\n%s", GiteeReleasesPage),
 	}
 }
 
-// parseVersion 解析语义化版本号。"1.2.3" → []int{1,2,3}
+// parseVersion 解析语义化版本号
 func parseVersion(v string) []int {
 	v = strings.TrimPrefix(v, "v")
 	parts := strings.Split(v, ".")
@@ -131,7 +134,7 @@ func parseVersion(v string) []int {
 	return nums[:3]
 }
 
-// greaterVersion 判断 a > b（语义化版本比较）
+// greaterVersion 判断 a > b
 func greaterVersion(a, b string) bool {
 	va, vb := parseVersion(a), parseVersion(b)
 	for i := 0; i < 3; i++ {
@@ -142,7 +145,7 @@ func greaterVersion(a, b string) bool {
 	return false
 }
 
-// Download 下载更新文件到临时目录，返回路径
+// Download 下载更新文件
 func Download(url string) (string, error) {
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Get(url)
@@ -163,11 +166,10 @@ func Download(url string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
 	return tmpFile, nil
 }
 
-// Apply 应用更新：用批处理脚本替换当前 exe 并重启
+// Apply 应用更新：批处理替换 exe 并重启
 func Apply(updatePath string) string {
 	currentExe, err := os.Executable()
 	if err != nil {
