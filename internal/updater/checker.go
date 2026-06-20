@@ -1,8 +1,6 @@
 package updater
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,7 +17,14 @@ import (
 
 const (
 	CurrentVersion = "1.0.1"
-	DefaultCheckURL = "https://gitee.com/api/v5/repos/3672830/wintools/releases/latest"
+
+	// VERSION 文件地址（无需 API、无需 token，raw 直连）
+	VersionURLGitHub = "https://raw.githubusercontent.com/manfengjun/wintools/master/VERSION"
+	VersionURLGitee  = "https://gitee.com/3672830/wintools/raw/master/VERSION"
+
+	// 下载地址模板（根据版本号拼接）
+	DownloadURLGitHub = "https://github.com/manfengjun/wintools/releases/download/v%s/Wintools_Windows_x86_64.exe"
+	DownloadURLGitee  = "https://gitee.com/3672830/wintools/releases/download/v%s/Wintools_Windows_x86_64.exe"
 )
 
 // UpdateInfo 更新检测结果
@@ -31,8 +36,84 @@ type UpdateInfo struct {
 	Error        string `json:"error,omitempty"`
 }
 
-// parseVersion 解析语义化版本号，用于比较。
-// "1.2.3" → []int{1,2,3}，"v1.2" → []int{1,2,0}
+// fetchVersion 从 URL 读取 VERSION 文件，返回版本号字符串。
+func fetchVersion(url string) (string, error) {
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+// Check 检查是否有新版本。
+// 依次尝试 GitHub raw → Gitee raw 读取 VERSION 文件，无需 API、无需 token。
+func Check() UpdateInfo {
+	// 获取更新源配置（用于用户自定义，非必需）
+	cfg := common.LoadConfig()
+
+	// 根据配置决定优先尝试哪个源
+	urls := []string{VersionURLGitHub, VersionURLGitee}
+	if cfg.UpdateURL != "" {
+		// 如果用户配置了自定义源，优先尝试
+		if strings.Contains(cfg.UpdateURL, "gitee.com") {
+			urls = []string{VersionURLGitee, VersionURLGitHub}
+		}
+	}
+
+	var lastErr string
+	for _, url := range urls {
+		ver, err := fetchVersion(url)
+		if err != nil {
+			lastErr = fmt.Sprintf("检测失败: %v", err)
+			continue
+		}
+
+		// 解析版本号
+		ver = strings.TrimPrefix(ver, "v")
+		if ver == "" {
+			continue
+		}
+
+		if !greaterVersion(ver, CurrentVersion) {
+			// 已是最新
+			return UpdateInfo{HasUpdate: false, Version: CurrentVersion}
+		}
+
+		// 有新版本，根据数据来源构造下载地址
+		dlURL := fmt.Sprintf(DownloadURLGitHub, ver)
+		if strings.Contains(url, "gitee.com") {
+			dlURL = fmt.Sprintf(DownloadURLGitee, ver)
+		}
+
+		return UpdateInfo{
+			HasUpdate:    true,
+			Version:      ver,
+			DownloadURL:  dlURL,
+			ReleaseNotes: fmt.Sprintf("发现新版本 v%s，点击下载更新。", ver),
+		}
+	}
+
+	// 全部失败
+	if lastErr != "" {
+		return UpdateInfo{Error: lastErr}
+	}
+	return UpdateInfo{
+		Error: "未找到更新源，请确认网络连接正常",
+	}
+}
+
+// parseVersion 解析语义化版本号。"1.2.3" → []int{1,2,3}
 func parseVersion(v string) []int {
 	v = strings.TrimPrefix(v, "v")
 	parts := strings.Split(v, ".")
@@ -44,7 +125,6 @@ func parseVersion(v string) []int {
 		}
 		nums = append(nums, n)
 	}
-	// 补齐到 3 位
 	for len(nums) < 3 {
 		nums = append(nums, 0)
 	}
@@ -62,97 +142,10 @@ func greaterVersion(a, b string) bool {
 	return false
 }
 
-// Check 检查是否有新版本
-func Check() UpdateInfo {
-	// 从配置文件读取更新 URL，若未配置使用默认值
-	cfg := common.LoadConfig()
-	checkURL := cfg.UpdateURL
-	if checkURL == "" {
-		checkURL = DefaultCheckURL
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", checkURL, nil)
-	if err != nil {
-		return UpdateInfo{Error: "请求失败: " + err.Error()}
-	}
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return UpdateInfo{Error: "网络错误: " + err.Error()}
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return UpdateInfo{HasUpdate: false, Version: CurrentVersion,
-			Error: "未找到更新源，请确保项目已发布到 Releases"}
-	}
-	if resp.StatusCode != http.StatusOK {
-		return UpdateInfo{Error: fmt.Sprintf("服务器返回 %d", resp.StatusCode)}
-	}
-
-	body, _ := io.ReadAll(resp.Body)
-	var release struct {
-		TagName string `json:"tag_name"`
-		Body    string `json:"body"`
-		Assets  []struct {
-			Name               string `json:"name"`
-			BrowserDownloadURL string `json:"browser_download_url"`
-		} `json:"assets"`
-	}
-	if err := json.Unmarshal(body, &release); err != nil {
-		return UpdateInfo{Error: "解析失败: " + err.Error()}
-	}
-
-	latest := strings.TrimPrefix(release.TagName, "v")
-	if latest == "" {
-		return UpdateInfo{HasUpdate: false, Version: CurrentVersion}
-	}
-	if !greaterVersion(latest, CurrentVersion) {
-		return UpdateInfo{HasUpdate: false, Version: CurrentVersion}
-	}
-
-	dlURL := ""
-	// 优先找平台匹配的 asset
-	for _, asset := range release.Assets {
-		name := strings.ToLower(asset.Name)
-		if strings.Contains(name, "windows_x86_64") || strings.Contains(name, "windows_amd64") {
-			dlURL = asset.BrowserDownloadURL
-			break
-		}
-	}
-	// 没有平台匹配，fallback 到任意 exe/zip
-	if dlURL == "" {
-		for _, asset := range release.Assets {
-			name := strings.ToLower(asset.Name)
-			if strings.HasSuffix(name, ".exe") || strings.HasSuffix(name, ".zip") {
-				dlURL = asset.BrowserDownloadURL
-				break
-			}
-		}
-	}
-
-	return UpdateInfo{
-		HasUpdate:     true,
-		Version:       latest,
-		DownloadURL:   dlURL,
-		ReleaseNotes:  release.Body,
-	}
-}
-
 // Download 下载更新文件到临时目录，返回路径
 func Download(url string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return "", err
-	}
-
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Get(url)
 	if err != nil {
 		return "", err
 	}
@@ -181,7 +174,6 @@ func Apply(updatePath string) string {
 		return "获取当前程序路径失败: " + err.Error()
 	}
 
-	// 对路径加引号防止空格问题
 	batchContent := fmt.Sprintf(`@echo off
 timeout /t 2 /nobreak >nul
 :retry
@@ -203,8 +195,6 @@ del /f /q "%%~f0"
 		return "启动更新脚本失败: " + err.Error()
 	}
 
-	// 优雅退出：通知前端即将关闭
 	os.Exit(0)
 	return ""
 }
-
