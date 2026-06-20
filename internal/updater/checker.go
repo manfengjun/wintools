@@ -85,7 +85,7 @@ func Check() UpdateInfo {
 	for _, url := range urls {
 		ver, err := fetchVersion(url)
 		if err != nil {
-			lastErr = fmt.Sprintf("检测失败: %v", err)
+			lastErr = "连接 GitHub 失败"
 			continue
 		}
 
@@ -108,11 +108,11 @@ func Check() UpdateInfo {
 
 	if lastErr != "" {
 		return UpdateInfo{
-			Error: fmt.Sprintf("%s\n\n提示：如果无法访问 GitHub，请手动前往 Gitee 下载:\n%s", lastErr, GiteeReleasesPage),
+			Error: fmt.Sprintf("%s\n\n提示：如果无法访问 GitHub，请手动前往 Gitee 下载最新版本:\n%s", lastErr, GiteeReleasesPage),
 		}
 	}
 	return UpdateInfo{
-		Error: fmt.Sprintf("未找到更新源\n\n请手动前往 Gitee 下载:\n%s", GiteeReleasesPage),
+		Error: fmt.Sprintf("未找到更新源\n\n请手动前往 Gitee 下载最新版本:\n%s", GiteeReleasesPage),
 	}
 }
 
