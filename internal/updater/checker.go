@@ -20,7 +20,10 @@ const (
 
 	// GitHub raw（无需 token）
 	VersionURLGitHubRaw = "https://raw.githubusercontent.com/manfengjun/wintools/master/VERSION"
+	// GitHub API（无需 token，公开仓库可用）
 	VersionURLGitHubAPI = "https://api.github.com/repos/manfengjun/wintools/contents/VERSION"
+	// Gitee raw（公开仓库无需 token）
+	VersionURLGiteeRaw = "https://gitee.com/3672830/wintools/raw/master/VERSION"
 
 	// 下载地址模板
 	DownloadURLGitHub = "https://github.com/manfengjun/wintools/releases/download/v%s/Wintools_Windows_x86_64.exe"
@@ -74,9 +77,9 @@ func fetchVersion(url string) (string, error) {
 }
 
 // Check 检查是否有新版本。
-// 从 GitHub 读取 VERSION 文件（唯一免 token 的方式），下载地址根据配置走。
+// 依次尝试 GitHub raw → GitHub API → Gitee raw（均无需 token）。
 func Check() UpdateInfo {
-	urls := []string{VersionURLGitHubRaw, VersionURLGitHubAPI}
+	urls := []string{VersionURLGitHubRaw, VersionURLGitHubAPI, VersionURLGiteeRaw}
 
 	var lastErr string
 	for _, url := range urls {
