@@ -3,7 +3,7 @@ import { ref, onMounted, watch } from 'vue'
 import * as theme from '../theme.js'
 import { useT, setLocale, getLocale, detectLanguage, loadLocalePref } from '../locale.js'
 import { VerifyPassword, ChangePassword, ChangeDefaultPassword, IsDefaultPassword } from '../../wailsjs/go/desktoplock/API'
-import { CheckUpdate, DownloadUpdate, ApplyUpdate, GetUpdateURL, SetUpdateURL } from '../../wailsjs/go/updater/API'
+import { CheckUpdate, DownloadUpdate, ApplyUpdate } from '../../wailsjs/go/updater/API'
 import { IsAutoStart, SetAutoStart } from '../../wailsjs/go/main/App'
 
 const emit = defineEmits(['close'])
@@ -116,14 +116,6 @@ async function confirmPwdChange() {
 const updateStatus = ref('')
 const updateInfo = ref(null)
 const downloading = ref(false)
-const updateSource = ref('github')
-
-async function switchSource(src) {
-  updateSource.value = src
-  await SetUpdateURL(src === 'gitee'
-    ? 'https://gitee.com/api/v5/repos/3672830/wintools/releases/latest'
-    : 'https://api.github.com/repos/manfengjun/wintools/releases/latest')
-}
 
 async function checkForUpdate() {
   updateStatus.value = '检查中...'
@@ -180,10 +172,7 @@ watch(activeCategory, (cat) => {
     checkDefaultPwd()
   }
   if (cat === 'update') {
-    // 恢复更新源状态
-    GetUpdateURL().then(url => {
-      if (url && url.includes('gitee')) updateSource.value = 'gitee'
-    }).catch(() => {})
+    // 无需加载配置，更新检测自动用 GitHub 检测、Gitee 下载
   }
   if (cat === 'startup') {
     loadAutoStart()
@@ -393,13 +382,9 @@ function onLocaleChange() {
             <h3 class="content-title">{{ t('settings.update') }}</h3>
             <p class="content-subtitle">{{ t('settings.updateSub') }}。</p>
             <section class="setting-section" style="max-width:420px;">
-              <span class="section-label">{{ t('settings.updateSource') }}</span>
-              <div style="display:flex;gap:8px;margin-top:8px;margin-bottom:16px;">
-                <button class="btn btn-sm" :class="updateSource === 'github' ? 'btn-primary' : 'btn-outline'"
-                        @click="switchSource('github')">GitHub</button>
-                <button class="btn btn-sm" :class="updateSource === 'gitee' ? 'btn-primary' : 'btn-outline'"
-                        @click="switchSource('gitee')">Gitee</button>
-              </div>
+              <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
+                更新检测通过 GitHub 获取版本信息，下载文件来自 Gitee。
+              </p>
               <button class="btn btn-primary btn-sm" @click="checkForUpdate"
                       :disabled="downloading">
                 {{ t('settings.checkUpdate') }}
