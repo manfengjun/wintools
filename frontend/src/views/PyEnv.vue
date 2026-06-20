@@ -1,9 +1,10 @@
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import IconPython from '../components/icons/IconPython.vue'
 import { useT } from '../locale.js'
+import { initialProgress, applyProgress } from './pyEnvProgress.js'
 
-// 使用 Wails 生成的绑定模块，而非 window.go.main 路径
+// 使用 Wails 生成的绑定模块
 import { AvailablePackages, CheckStatus, InstallWithElevation } from '../../wailsjs/go/pyenv/InstallerAPI'
 
 const t = useT()
@@ -13,11 +14,12 @@ const pythonExe = ref('')
 const version = ref('')
 const pipInstalled = ref(false)
 const installing = ref(false)
-const progressStep = ref('')
-const progressPercent = ref(0)
 const log = ref([])
-const packages = ref([])
 const logContainer = ref(null)
+const packages = ref([])
+
+// Progress reducer state
+const progress = reactive(initialProgress())
 
 let eventsCancel = null
 
@@ -31,10 +33,9 @@ async function loadPackages() {
   }
 }
 
-// ── 日志 ──
+// ── 日志（用于 reducer 未覆盖的 UI 日志）──
 function addLog(msg, type = 'info') {
   log.value.push({ msg, type, time: new Date().toLocaleTimeString() })
-  // 自动滚动到底部
   nextTick(() => {
     if (logContainer.value) {
       logContainer.value.scrollTop = logContainer.value.scrollHeight
@@ -57,8 +58,21 @@ async function checkStatus() {
 function listenProgress() {
   if (typeof window.runtime !== 'undefined' && window.runtime.EventsOn) {
     window.runtime.EventsOn('pyenv:progress', (data) => {
-      progressStep.value = data.step || ''
-      progressPercent.value = data.percent || 0
+      // Apply event through the reducer
+      const event = {
+        step: data.step || '',
+        message: data.message || '',
+        percent: data.percent,
+        done: data.done,
+        error: data.error,
+        package: data.package,
+        package_status: data.package_status,
+      }
+      const next = applyProgress(progress, event)
+      Object.assign(progress, next)
+
+      installing.value = next.installing
+
       if (data.message) addLog(data.message, data.error ? 'error' : data.done ? 'success' : 'info')
       if (data.error) addLog('❌ ' + data.error, 'error')
       if (data.done) { installing.value = false; checkStatus() }
@@ -69,12 +83,15 @@ function listenProgress() {
 
 async function startInstall() {
   installing.value = true
+  installing.value = true
   log.value = []
-  progressStep.value = ''
-  progressPercent.value = 0
-  addLog(t('pyEnv.logStart'))
 
+  // Reset progress via reducer
   const selected = packages.value.filter(p => p.checked).map(p => p.id)
+  const fresh = initialProgress(selected)
+  Object.assign(progress, fresh)
+
+  addLog(t('pyEnv.logStart'))
   addLog('选择包: ' + (selected.length > 0 ? selected.join(', ') : '（无）'))
 
   try {
@@ -91,6 +108,9 @@ async function startInstall() {
 function toggleAll(checked) {
   packages.value.forEach(p => { p.checked = checked })
 }
+
+// Show the progress card whenever we have active or visible events
+const showProgress = computed(() => progress.visible || progress.logs.length > 0)
 
 onMounted(() => { checkStatus(); listenProgress(); loadPackages() })
 onUnmounted(() => { if (eventsCancel) eventsCancel() })
@@ -119,13 +139,34 @@ onUnmounted(() => { if (eventsCancel) eventsCancel() })
       </div>
     </div>
 
-    <!-- Progress + Log -->
-    <div v-if="installing" class="card" style="margin-bottom:20px;">
+    <!-- Progress + Log (visible while installing OR after completion/error) -->
+    <div v-if="showProgress" class="card" style="margin-bottom:20px;">
       <div style="margin-bottom:12px;">
-        <div style="font-weight:600;font-size:14px;margin-bottom:4px;">{{ progressStep || t('common.loading') }}</div>
-        <div class="progress-bar"><div class="progress-fill" :style="{width:progressPercent+'%'}" role="progressbar"
-             :aria-valuenow="progressPercent" aria-valuemin="0" aria-valuemax="100"></div></div>
+        <div style="font-weight:600;font-size:14px;margin-bottom:4px;">
+          {{ progress.message || (installing ? t('common.loading') : '') }}
+        </div>
+        <!-- Determinate progress bar -->
+        <div v-if="progress.step !== 'install-python'" class="progress-bar">
+          <div class="progress-fill" :style="{width: progress.percent + '%'}" role="progressbar"
+               :aria-valuenow="progress.percent" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+        <!-- Indeterminate progress bar during install-python -->
+        <div v-else class="progress-bar indeterminate">
+          <div class="progress-fill" role="progressbar" aria-label="安装进行中..."></div>
+        </div>
       </div>
+
+      <!-- Package statuses -->
+      <div v-if="Object.keys(progress.packages).length > 0" style="margin-bottom:12px;">
+        <div class="pkg-status-grid">
+          <div v-for="(status, name) in progress.packages" :key="name" class="pkg-status-item" :class="'pkg-' + status">
+            <span class="pkg-status-icon">{{ status === 'success' ? '✓' : status === 'failed' ? '✗' : status === 'installing' ? '⟳' : '○' }}</span>
+            <span class="pkg-status-name">{{ name }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Log box -->
       <div class="log-box" ref="logContainer">
         <div v-for="(entry,i) in log" :key="i" class="log-line" :class="entry.type">
           <span class="log-time">{{ entry.time }}</span><span>{{ entry.msg }}</span>
@@ -160,7 +201,7 @@ onUnmounted(() => { if (eventsCancel) eventsCancel() })
     <!-- Install Button -->
     <div class="card">
       <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.7;">
-        {{ t('pyEnv.installingDesc').replace('{path}', 'C:\\Python\\3.12') }}
+        {{ t('pyEnv.installingDesc').replace('{path}', 'Python 官方安装目录（所有用户）') }}
       </p>
       <button class="btn" :class="installed?'btn-outline':'btn-primary'" :disabled="installing"
               @click="startInstall" :aria-label="installing ? t('pyEnv.installing') : (installed ? t('pyEnv.reinstallBtn') : t('pyEnv.installBtn'))">
@@ -252,5 +293,40 @@ onUnmounted(() => { if (eventsCancel) eventsCancel() })
 .pkg-desc {
   font-size:11px;color:var(--text-muted);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+
+/* ── 进度包状态网格 ── */
+.pkg-status-grid {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.pkg-status-item {
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  padding:3px 8px;
+  border-radius:var(--radius-sm);
+  font-size:12px;
+  background:var(--bg-code);
+}
+.pkg-status-icon {
+  font-size:12px;
+  width:14px;
+  text-align:center;
+}
+.pkg-pending   { color:var(--text-placeholder); }
+.pkg-installing { color:var(--color-primary); }
+.pkg-success   { color:var(--color-success); }
+.pkg-failed    { color:var(--color-danger); }
+
+/* ── 不确定进度条 ── */
+.progress-bar.indeterminate .progress-fill {
+  width:30%;
+  animation: indeterminate 1.5s ease-in-out infinite;
+}
+@keyframes indeterminate {
+  0%   { transform:translateX(-100%); }
+  100% { transform:translateX(400%); }
 }
 </style>
