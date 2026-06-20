@@ -175,6 +175,7 @@ function Invoke-Build {
 function Invoke-Tag {
     param([string]$Version)
     if (-not $Version) { $Version = Get-CurrentVersion }
+    $Version = $Version.TrimStart('v')
     $tag = "v$Version"
     $defaultBranch = Get-DefaultBranch
 
@@ -289,6 +290,7 @@ function Publish-Gitee {
 function New-Release {
     param([string]$Version)
     if (-not $Version) { $Version = Get-CurrentVersion }
+    $Version = $Version.TrimStart('v')
     $tag = "v$Version"
     $notes = Get-ReleaseNotes
 
