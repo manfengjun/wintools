@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	CurrentVersion = "1.0.1"
+	CurrentVersion = "1.0.2"
 
 	// GitHub raw（无需 token，全球正常网络可用）
 	VersionURLGitHubRaw = "https://raw.githubusercontent.com/manfengjun/wintools/master/VERSION"
