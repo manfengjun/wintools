@@ -116,43 +116,13 @@ async function confirmPwdChange() {
 const updateStatus = ref('')
 const updateInfo = ref(null)
 const downloading = ref(false)
-const updateURL = ref('')
-const updateURLSaved = ref(false)
-const updatePreset = ref('gitee')
+const updateSource = ref('github')
 
-const updatePresets = [
-  { id: 'gitee', label: 'Gitee', url: 'https://gitee.com/api/v5/repos/3672830/wintools/releases/latest' },
-  { id: 'github', label: 'GitHub', url: 'https://api.github.com/repos/manfengjun/wintools/releases/latest' },
-  { id: 'custom', label: '自定义', url: '' },
-]
-
-// 加载更新源配置
-async function loadUpdateURL() {
-  try {
-    const url = await GetUpdateURL()
-    updateURL.value = url
-    // 匹配预设
-    const matched = updatePresets.find(p => p.url === url)
-    updatePreset.value = matched ? matched.id : 'custom'
-  } catch {}
-}
-
-function selectUpdatePreset(presetId) {
-  const preset = updatePresets.find(p => p.id === presetId)
-  if (preset && preset.url) {
-    updatePreset.value = presetId
-    updateURL.value = preset.url
-  } else {
-    updatePreset.value = 'custom'
-  }
-}
-
-async function saveUpdateURL() {
-  try {
-    const ok = await SetUpdateURL(updateURL.value)
-    updateURLSaved.value = ok
-    setTimeout(() => { updateURLSaved.value = false }, 2000)
-  } catch {}
+async function switchSource(src) {
+  updateSource.value = src
+  await SetUpdateURL(src === 'gitee'
+    ? 'https://gitee.com/api/v5/repos/3672830/wintools/releases/latest'
+    : 'https://api.github.com/repos/manfengjun/wintools/releases/latest')
 }
 
 async function checkForUpdate() {
@@ -210,7 +180,10 @@ watch(activeCategory, (cat) => {
     checkDefaultPwd()
   }
   if (cat === 'update') {
-    loadUpdateURL()
+    // 恢复更新源状态
+    GetUpdateURL().then(url => {
+      if (url && url.includes('gitee')) updateSource.value = 'gitee'
+    }).catch(() => {})
   }
   if (cat === 'startup') {
     loadAutoStart()
@@ -421,21 +394,11 @@ function onLocaleChange() {
             <p class="content-subtitle">{{ t('settings.updateSub') }}。</p>
             <section class="setting-section" style="max-width:420px;">
               <span class="section-label">{{ t('settings.updateSource') }}</span>
-              <div style="display:flex;gap:8px;margin-top:8px;margin-bottom:12px;">
-                <button v-for="p in updatePresets" :key="p.id"
-                  class="btn btn-sm" :class="updatePreset === p.id ? 'btn-primary' : 'btn-outline'"
-                  @click="selectUpdatePreset(p.id)">
-                  {{ p.label }}
-                </button>
-              </div>
-              <div v-if="updatePreset === 'custom'" style="display:flex;gap:8px;margin-bottom:12px;">
-                <input v-model="updateURL" class="input" placeholder="https://..." style="flex:1;" />
-                <button class="btn btn-outline btn-sm" @click="saveUpdateURL" style="white-space:nowrap;">
-                  {{ t('common.save') }}
-                </button>
-              </div>
-              <div v-if="updateURLSaved" style="font-size:12px;color:var(--color-success);margin-bottom:8px;">
-                {{ t('common.saved') }}
+              <div style="display:flex;gap:8px;margin-top:8px;margin-bottom:16px;">
+                <button class="btn btn-sm" :class="updateSource === 'github' ? 'btn-primary' : 'btn-outline'"
+                        @click="switchSource('github')">GitHub</button>
+                <button class="btn btn-sm" :class="updateSource === 'gitee' ? 'btn-primary' : 'btn-outline'"
+                        @click="switchSource('gitee')">Gitee</button>
               </div>
               <button class="btn btn-primary btn-sm" @click="checkForUpdate"
                       :disabled="downloading">
