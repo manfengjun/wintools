@@ -115,13 +115,14 @@ function Initialize-NSIS {
     if (Get-Command makensis -ErrorAction SilentlyContinue) { return $true }
 
     $knownPaths = @(
+            "$ProjectDir\build\nsis",
             "$env:ProgramFiles\NSIS",
             "${env:ProgramFiles(x86)}\NSIS",
             "$env:LOCALAPPDATA\WintoolsBuildTools\NSIS\Bin"
         ) | Where-Object { $_ -and (Test-Path (Join-Path $_ 'makensis.exe')) }
 
-    if ($knownPaths.Count -gt 0) {
-        $dir = $knownPaths[0]
+    if ($knownPaths) {
+        $dir = @($knownPaths)[0]
         $env:PATH = "$dir;$env:PATH"
         # 确认 makensis 能真正运行
         $test = cmd /c "$dir\makensis.exe -VERSION" 2>$null
