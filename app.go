@@ -105,3 +105,28 @@ func (a *App) ConfirmQuit() {
 		wailsRuntime.Quit(a.ctx)
 	}
 }
+
+// IsAutoStart 返回是否已注册开机自启动。
+func (a *App) IsAutoStart() bool {
+	return common.IsAutoStart()
+}
+
+// SetAutoStart 开启或关闭开机自启动。
+func (a *App) SetAutoStart(enabled bool) bool {
+	var err error
+	if enabled {
+		err = common.EnableAutoStart()
+	} else {
+		err = common.DisableAutoStart()
+	}
+	if err != nil {
+		common.Error("设置开机自启动失败: %v", err)
+		return false
+	}
+	status := "关闭"
+	if enabled {
+		status = "开启"
+	}
+	common.Info("开机自启动已%s", status)
+	return true
+}

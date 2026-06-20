@@ -2,7 +2,8 @@
 import { ref, onMounted } from 'vue'
 import IconLock from '../components/icons/IconLock.vue'
 import { useT } from '../locale.js'
-import { Status, Lock, Unlock, Backup, Restore, VerifyPassword, ListBackups, DeleteBackup, GetBackupIcons } from '../../wailsjs/go/desktoplock/API'
+import { Status, Lock, Unlock, Backup, Restore, VerifyPassword, ListBackups, DeleteBackup } from '../../wailsjs/go/desktoplock/API'
+import { normalizeBackupItems } from './desktopLockBackups.js'
 
 const locked = ref(false)
 const backupCount = ref(0)
@@ -64,33 +65,21 @@ async function doRestore() {
 
 async function listBackups() {
   showBackupList.value = !showBackupList.value
-  if (showBackupList.value) {
-    try {
-      const items = await ListBackups()
-      if (!items || !Array.isArray(items)) {
-        backupList.value = []
-        return
-      }
-      // 立即显示列表
-      backupList.value = items
-      // 一次性获取所有图标（一次 Go 调用，内部一次 PowerShell 批量提取）
-      try {
-        const icons = await GetBackupIcons()
-        if (icons) {
-          for (const item of items) {
-            if (icons[item.name]) {
-              item.icon_base64 = icons[item.name]
-            }
-          }
-          backupList.value = [...backupList.value]
-        }
-      } catch {
-        // 图标加载失败不影响列表
-      }
-    } catch (e) {
-      console.error('listBackups error:', e)
+  if (!showBackupList.value) {
+    return
+  }
+
+  try {
+    const items = await ListBackups()
+    if (!items || !Array.isArray(items)) {
       backupList.value = []
+      return
     }
+
+    backupList.value = normalizeBackupItems(items)
+  } catch (e) {
+    console.error('listBackups error:', e)
+    backupList.value = []
   }
 }
 
@@ -105,7 +94,7 @@ async function confirmDelete() {
   confirmDeleteTarget.value = ''
   if (ok) {
     showToast(t('desktopLock.deleteBackupToast').replace('{name}', name), 'success')
-    backupList.value = await ListBackups()
+    backupList.value = normalizeBackupItems(await ListBackups())
     refreshStatus()
   } else {
     showToast(t('desktopLock.deleteBackupFail'), 'error')
@@ -115,8 +104,6 @@ async function confirmDelete() {
 function cancelDelete() {
   confirmDeleteTarget.value = ''
 }
-
-// ── 密码验证 ──
 
 async function verifyAndLock() {
   pwdError.value = ''
@@ -208,16 +195,22 @@ onMounted(refreshStatus)
         </button>
       </div>
 
-      <!-- ═══ 备份列表 ═══ -->
       <div v-if="showBackupList" style="margin-top:16px;border-top:1px solid var(--border-default);padding-top:16px;">
         <p style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:12px;">
           {{ t('desktopLock.backupList') }}（{{ backupList.length }}）
         </p>
 
-        <!-- 有备份 -->
         <div v-if="backupList.length > 0" class="backup-table">
           <div v-for="item in backupList" :key="item.name" class="backup-row">
-            <span v-if="!item.icon_base64" class="backup-icon">🔗</span>
+            <span v-if="!item.icon_base64" class="backup-icon" aria-hidden="true">
+              <svg viewBox="0 0 28 28" fill="none">
+                <rect x="5" y="8" width="18" height="15" rx="5" />
+                <path d="M14 8V5" />
+                <circle cx="10.5" cy="15" r="1.3" />
+                <circle cx="17.5" cy="15" r="1.3" />
+                <path d="M11 19h6" />
+              </svg>
+            </span>
             <img v-else :src="item.icon_base64" class="backup-img" alt="" />
             <div class="backup-info">
               <span class="backup-name" :title="item.name">{{ item.name }}</span>
@@ -235,13 +228,11 @@ onMounted(refreshStatus)
           </div>
         </div>
 
-        <!-- 无备份 -->
         <div v-else style="font-size:13px;color:var(--text-placeholder);padding:20px 0;text-align:center;">
           {{ t('desktopLock.noBackups') }}
         </div>
       </div>
 
-      <!-- 缺失列表 -->
       <div v-if="missing.length > 0" style="margin-top: 14px;">
         <p style="font-size:12px;color:var(--color-danger);margin-bottom:6px;">
           {{ t('desktopLock.missingTitle').replace('{n}', missing.length) }}
@@ -256,14 +247,12 @@ onMounted(refreshStatus)
       </div>
     </div>
 
-    <!-- ═══ 密码验证弹窗 ═══ -->
     <div v-if="showPwdDialog" class="overlay" role="dialog" aria-modal="true" :aria-label="locked ? t('desktopLock.pwdDialogUnlock') : t('desktopLock.pwdDialogLock')">
       <div class="dialog">
         <h3>{{ locked ? t('desktopLock.pwdDialogUnlock') : t('desktopLock.pwdDialogLock') }}</h3>
         <p>{{ t('desktopLock.pwdDialogTitle') }}</p>
         <input v-model="pwdInput" class="input" type="password" :placeholder="t('desktopLock.pwdDialogTitle')"
                aria-label="password" @keyup.enter="confirmPwd" autofocus />
-        <!-- 错误提示：显示在弹窗内部 -->
         <p v-if="pwdError" class="pwd-error">{{ pwdError }}</p>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
           <button class="btn btn-outline btn-sm" @click="cancelPwd">{{ t('common.cancel') }}</button>
@@ -272,7 +261,6 @@ onMounted(refreshStatus)
       </div>
     </div>
 
-    <!-- ═══ 删除确认弹窗 ═══ -->
     <div v-if="confirmDeleteTarget" class="overlay" role="dialog" aria-modal="true" :aria-label="t('desktopLock.deleteConfirm')">
       <div class="dialog dialog-sm">
         <h3>{{ t('desktopLock.deleteConfirm') }}</h3>
@@ -292,7 +280,6 @@ onMounted(refreshStatus)
 .toast-enter-active { animation: slideDown 0.25s ease; }
 .toast-leave-active { animation: slideDown 0.2s ease reverse; }
 
-/* ── 密码弹窗错误提示 ── */
 .pwd-error {
   margin-top: 10px;
   font-size: 13px;
@@ -303,7 +290,6 @@ onMounted(refreshStatus)
   border: 1px solid rgba(229, 72, 77, 0.2);
 }
 
-/* ── 备份列表表格 ── */
 .backup-table {
   display: flex;
   flex-direction: column;
@@ -321,11 +307,28 @@ onMounted(refreshStatus)
   background: var(--bg-nav-hover);
 }
 .backup-icon {
-  font-size: 20px;
-  line-height: 1;
   width: 28px;
-  text-align: center;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
   flex-shrink: 0;
+  color: #e14aa0;
+  background: linear-gradient(135deg, rgba(255, 119, 190, 0.18), rgba(98, 211, 255, 0.14));
+  box-shadow: inset 0 0 0 1px rgba(225, 74, 160, 0.18);
+}
+.backup-icon svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.backup-icon rect,
+.backup-icon circle {
+  stroke: currentColor;
 }
 .backup-img {
   width: 28px;
@@ -370,8 +373,8 @@ onMounted(refreshStatus)
   color: var(--color-danger);
 }
 
-/* ── 小弹窗 ── */
 .dialog-sm {
   max-width: 380px;
 }
+
 </style>

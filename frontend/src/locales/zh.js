@@ -137,6 +137,10 @@ export default {
     langAuto: '跟随系统',
     langZh: '中文',
     langEn: 'English',
+    startup: '启动',
+    startupSub: '开机自启动',
+    autoStart: '开机自启动',
+    autoStartDesc: '登录 Windows 后自动启动码力工坊',
   },
 
   // ── 关于 ──

@@ -11,8 +11,6 @@ export function ChangePassword(arg1:string,arg2:string):Promise<boolean|string>;
 
 export function DeleteBackup(arg1:string):Promise<boolean>;
 
-export function GetBackupIcons():Promise<Record<string, string>>;
-
 export function IsDefaultPassword():Promise<boolean>;
 
 export function ListBackups():Promise<Array<desktoplock.BackupItem>>;

@@ -18,10 +18,6 @@ export function DeleteBackup(arg1) {
   return window['go']['desktoplock']['API']['DeleteBackup'](arg1);
 }
 
-export function GetBackupIcons() {
-  return window['go']['desktoplock']['API']['GetBackupIcons']();
-}
-
 export function IsDefaultPassword() {
   return window['go']['desktoplock']['API']['IsDefaultPassword']();
 }

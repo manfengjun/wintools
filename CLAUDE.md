@@ -9,7 +9,7 @@
 - **框架**: Wails v2 (Go + WebView2)
 - **后端**: Go 1.23+
 - **前端**: Vue 3 + Vite 5
-- **构建**: `wails build`
+- **构建**: `.\build.ps1 build`（NSIS + WebView2 在线引导程序）
 - **日志**: `%APPDATA%\DesktopSuite\logs\app.log`
 - **配置**: `%APPDATA%\DesktopSuite\config.json`
 
@@ -50,8 +50,10 @@ apps/wintools/
 
 ```powershell
 cd apps/wintools
-wails build              # 输出 build/bin/Wintools.exe
+.\build.ps1 build        # 输出调试 EXE 和对外发布的 NSIS 安装包
 ```
+
+发布时只上传 `build/bin/*installer*.exe`，不要上传裸 `Wintools.exe`。WebView2 使用 `embed` 模式，内嵌小型联网引导程序，不是完整离线 Runtime。
 
 ## 关键文件
 

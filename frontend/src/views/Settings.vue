@@ -4,6 +4,7 @@ import * as theme from '../theme.js'
 import { useT, setLocale, getLocale, detectLanguage, loadLocalePref } from '../locale.js'
 import { VerifyPassword, ChangePassword, ChangeDefaultPassword, IsDefaultPassword } from '../../wailsjs/go/desktoplock/API'
 import { CheckUpdate, DownloadUpdate, ApplyUpdate, GetUpdateURL, SetUpdateURL } from '../../wailsjs/go/updater/API'
+import { IsAutoStart, SetAutoStart } from '../../wailsjs/go/main/App'
 
 const emit = defineEmits(['close'])
 
@@ -13,6 +14,7 @@ const categories = [
   { id: 'appearance', labelKey: 'settings.appearance', subtitleKey: 'settings.appearanceSub' },
   { id: 'mirror', labelKey: 'settings.mirror', subtitleKey: 'settings.mirrorSub' },
   { id: 'language', labelKey: 'settings.language', subtitleKey: 'settings.languageSub' },
+  { id: 'startup', labelKey: 'settings.startup', subtitleKey: 'settings.startupSub' },
   { id: 'password', labelKey: 'settings.password', subtitleKey: 'settings.passwordSub' },
   { id: 'update', labelKey: 'settings.update', subtitleKey: 'settings.updateSub' },
   { id: 'about', labelKey: 'settings.about', subtitleKey: 'settings.aboutSub' },
@@ -26,6 +28,23 @@ const visualStyle = ref('aurora')
 const fontSize = ref('default')
 const fontFamily = ref('system')
 const localePref = ref('auto')
+
+// Auto-start state
+const autoStartEnabled = ref(false)
+
+async function loadAutoStart() {
+  try {
+    autoStartEnabled.value = await IsAutoStart()
+  } catch {}
+}
+
+async function toggleAutoStart() {
+  const newVal = !autoStartEnabled.value
+  const ok = await SetAutoStart(newVal)
+  if (ok) {
+    autoStartEnabled.value = newVal
+  }
+}
 
 const visualStyles = [
   { id: 'graphite', tagKey: '利落',
@@ -193,6 +212,9 @@ watch(activeCategory, (cat) => {
   if (cat === 'update') {
     loadUpdateURL()
   }
+  if (cat === 'startup') {
+    loadAutoStart()
+  }
 })
 
 function onChange() {
@@ -341,6 +363,25 @@ function onLocaleChange() {
                   <span class="radio-dot" aria-hidden="true"></span>
                   <span>{{ t('settings.langEn') }}</span>
                 </label>
+              </div>
+            </section>
+          </div>
+
+          <!-- ═══ Startup ═══ -->
+          <div v-if="activeCategory === 'startup'">
+            <h3 class="content-title">{{ t('settings.startup') }}</h3>
+            <p class="content-subtitle">{{ t('settings.startupSub') }}。</p>
+            <section class="setting-section">
+              <div class="startup-row">
+                <div>
+                  <div class="startup-label">{{ t('settings.autoStart') }}</div>
+                  <div class="startup-desc">{{ t('settings.autoStartDesc') }}</div>
+                </div>
+                <button class="toggle-switch" :class="{ active: autoStartEnabled }"
+                        @click="toggleAutoStart" role="switch" :aria-checked="autoStartEnabled"
+                        :aria-label="t('settings.autoStart')">
+                  <span class="toggle-knob"></span>
+                </button>
               </div>
             </section>
           </div>
@@ -552,6 +593,52 @@ function onLocaleChange() {
   display: inline-block; font-size: 0.79rem; color: #fff;
   background: var(--color-primary); padding: 1px 8px; border-radius: 4px;
   vertical-align: middle; margin-left: 6px;
+}
+
+/* ── Startup toggle ── */
+.startup-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.startup-label {
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.startup-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.toggle-switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 12px;
+  background: var(--border-input);
+  cursor: pointer;
+  transition: background 0.2s;
+  padding: 0;
+}
+.toggle-switch.active {
+  background: var(--color-primary);
+}
+.toggle-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  transition: transform 0.2s;
+}
+.toggle-switch.active .toggle-knob {
+  transform: translateX(20px);
 }
 
 .toast-enter-active { animation: slideDown 0.25s ease; }
