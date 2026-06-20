@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/json"
+	"os"
+	"strings"
 
 	"github.com/wailsapp/wails/v2"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -12,6 +15,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
 	"github.com/manfengjun/wintools/internal/common"
+	"github.com/manfengjun/wintools/internal/pyenv"
 )
 
 //go:embed all:frontend/dist
@@ -23,6 +27,39 @@ var appIconBytes []byte
 func main() {
 	common.InitLogger()
 	defer common.CloseLogger()
+
+	// ── Elevated worker mode ──────────────────────────────
+	// Usage: wintools.exe --install-pyenv-worker <request.json>
+	// The worker reads the install request, runs the installation,
+	// writes terminal state, and exits WITHOUT initialising Wails.
+	if len(os.Args) > 2 && os.Args[1] == "--install-pyenv-worker" {
+		requestPath := os.Args[2]
+		common.Info("工作器模式: 从 %s 读取安装请求", requestPath)
+
+		data, err := os.ReadFile(requestPath)
+		if err != nil {
+			common.Error("读取请求文件失败: %v", err)
+			os.Exit(1)
+		}
+
+		var req pyenv.InstallRequest
+		if err := json.Unmarshal(data, &req); err != nil {
+			common.Error("解析请求文件失败: %v", err)
+			os.Exit(1)
+		}
+
+		common.Info("工作器: 安装 Python %s, 包: %v", req.PythonVersion, req.Packages)
+		pyenv.RunInstallWorker(req)
+		common.Info("工作器: 安装完成")
+		return
+	}
+
+	// ── Legacy single-arg worker mode (kept for compatibility) ──
+	if len(os.Args) > 1 && strings.Contains(os.Args[1], "--install-pyenv") {
+		common.Info("已弃用: 直接安装模式（请使用 --install-pyenv-worker <request.json>）")
+		return
+	}
+
 	common.Info("应用启动")
 	app := NewApp()
 

@@ -2,6 +2,7 @@ package pyenv
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/manfengjun/wintools/internal/common"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -29,10 +31,10 @@ type ProgressInfo struct {
 }
 
 type InstallStatus struct {
-	Installed     bool   `json:"installed"`
-	Version       string `json:"version"`
-	PythonExe     string `json:"python_exe"`
-	PipInstalled  bool   `json:"pip_installed"`
+	Installed    bool   `json:"installed"`
+	Version      string `json:"version"`
+	PythonExe    string `json:"python_exe"`
+	PipInstalled bool   `json:"pip_installed"`
 }
 
 // PackageInfo describes an installable Python package.
@@ -43,7 +45,27 @@ type PackageInfo struct {
 	DefaultOn   bool   `json:"default_on"`
 }
 
-// AvailablePackages returns the list of selectable packages.
+// ── Dependency injection for testability ──────────────────
+
+type installDependencies struct {
+	downloadFile func(url, dest string) error
+	runCmd       func(exe string, args ...string) (string, error)
+	findPython   func(version string) (string, error)
+	writeState   func(path string, state TaskState) error
+}
+
+// defaultDeps returns the production implementation of all dependencies.
+func defaultDeps() installDependencies {
+	return installDependencies{
+		downloadFile: downloadFile,
+		runCmd:       runCommand,
+		findPython:   findInstalledPython,
+		writeState:   writeTaskState,
+	}
+}
+
+// ── Available packages ────────────────────────────────────
+
 func (a *InstallerAPI) AvailablePackages() []PackageInfo {
 	return []PackageInfo{
 		{ID: "pygame", Name: "pygame", Description: "游戏开发框架", DefaultOn: true},
@@ -55,8 +77,6 @@ func (a *InstallerAPI) AvailablePackages() []PackageInfo {
 		{ID: "certifi", Name: "certifi", Description: "SSL 根证书包", DefaultOn: true},
 	}
 }
-
-const installDir = "C:\\Python\\3.12"
 
 // ── Lifecycle ──────────────────────────────────────────────
 
@@ -79,7 +99,6 @@ func (a *InstallerAPI) emit(step, message string, percent float64, done bool, er
 	if a.ctx != nil {
 		wailsRuntime.EventsEmit(a.ctx, "pyenv:progress", info)
 	}
-	// Also print to console for debug
 	fmt.Printf("[pyenv] %s: %s (%.0f%%)\n", step, message, percent)
 }
 
@@ -120,12 +139,12 @@ func downloadFileWithProgress(url, dest, label string) error {
 	defer out.Close()
 
 	buf := make([]byte, 32*1024)
-	written := int64(0)
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
-			out.Write(buf[:n])
-			written += int64(n)
+			if _, werr := out.Write(buf[:n]); werr != nil {
+				return werr
+			}
 		}
 		if err == io.EOF {
 			break
@@ -137,19 +156,28 @@ func downloadFileWithProgress(url, dest, label string) error {
 	return nil
 }
 
-// ── Installer ──────────────────────────────────────────────
+// ── Status ─────────────────────────────────────────────────
 
 func (a *InstallerAPI) CheckStatus() InstallStatus {
-	exe := filepath.Join(installDir, "python.exe")
+	// Try official-installer locations first, then fall back to legacy path.
+	exe, err := findInstalledPython("3.12")
+	if err != nil {
+		// Fallback to legacy embeddable location
+		legacyPath := filepath.Join("C:\\", "Python", "3.12", "python.exe")
+		if _, err2 := os.Stat(legacyPath); err2 == nil {
+			exe = legacyPath
+		} else {
+			return InstallStatus{PythonExe: "C:\\Python\\3.12\\python.exe"}
+		}
+	}
+
 	st := InstallStatus{PythonExe: exe}
 	if _, err := os.Stat(exe); err == nil {
 		st.Installed = true
-		// Try to get version
 		out, err := exec.Command(exe, "--version").Output()
 		if err == nil {
 			st.Version = strings.TrimSpace(string(out))
 		}
-		// Check pip
 		out2, err2 := exec.Command(exe, "-m", "pip", "--version").Output()
 		if err2 == nil {
 			st.PipInstalled = true
@@ -159,79 +187,233 @@ func (a *InstallerAPI) CheckStatus() InstallStatus {
 	return st
 }
 
-func (a *InstallerAPI) InstallWithPackages(selectedPackages []string) ProgressInfo {
-	cfg := common.LoadConfig()
-	mirror := cfg.MirrorURL
-	pyVersion := cfg.PyVersion
-	targetDir := installDir
+// ── Elevated worker ───────────────────────────────────────
 
-	a.emit("prepare", "开始安装 Python "+pyVersion, 0, false, "")
+// RunInstallWorker executes the full Python installation sequence
+// and writes progress to the state file at each step.
+// It is designed to run in the elevated worker process.
+func RunInstallWorker(req InstallRequest) TaskState {
+	return runInstallWorker(req, defaultDeps())
+}
 
-	// Step 1: Download Python embeddable
-	zipName := fmt.Sprintf("python-%s-embed-amd64.zip", pyVersion)
-	zipURL := fmt.Sprintf("https://www.python.org/ftp/python/%s/%s", pyVersion, zipName)
-	zipPath := filepath.Join(os.TempDir(), zipName)
-
-	a.emit("download", "正在下载 Python "+pyVersion+"...", 5, false, "")
-	if err := downloadFileWithProgress(zipURL, zipPath, "Python "+pyVersion); err != nil {
-		return ProgressInfo{Step: "download", Error: err.Error()}
+func runInstallWorker(req InstallRequest, deps installDependencies) TaskState {
+	step := func(s string) { deps.writeState(req.StatePath, TaskState{Step: s, Running: true}) }
+	finish := func(s TaskState) TaskState {
+		deps.writeState(req.StatePath, s)
+		return s
 	}
 
-	// Step 2: Extract
-	a.emit("extract", "正在解压...", 30, false, "")
-	if err := extractZip(zipPath, targetDir); err != nil {
-		return ProgressInfo{Step: "extract", Error: "解压失败: " + err.Error()}
+	// prepare
+	state := TaskState{Step: "prepare", Message: "开始安装 Python " + req.PythonVersion, Percent: 0, Running: true}
+	deps.writeState(req.StatePath, state)
+
+	// download
+	state.Step = "download"
+	state.Message = "正在下载 Python " + req.PythonVersion + " 安装程序..."
+	state.Percent = 10
+	deps.writeState(req.StatePath, state)
+
+	spec := officialInstallerSpec(req.PythonVersion)
+	installerPath := filepath.Join(os.TempDir(), "python-installer-"+spec.URL[strings.LastIndex(spec.URL, "/")+1:])
+	if err := deps.downloadFile(spec.URL, installerPath); err != nil {
+		return finish(TaskState{Step: "error", Error: "下载安装程序失败: " + err.Error()})
+	}
+	step("install-python")
+	deps.writeState(req.StatePath, TaskState{
+		Step: "install-python", Message: "正在安装 Python（需要几分钟）...", Percent: 40, Running: true,
+	})
+
+	// install python (silent)
+	// install python (silent)
+	if out, err := deps.runCmd(installerPath, spec.Args...); err != nil {
+		return finish(TaskState{Step: "error", Error: fmt.Sprintf("Python 安装程序退出错误: %v\n输出: %s", err, out)})
 	}
 
-	// Step 3: Configure _pth
-	a.emit("configure", "正在配置 Python 路径...", 45, false, "")
-	if err := configurePth(targetDir); err != nil {
-		return ProgressInfo{Step: "configure", Error: err.Error()}
+	step("verify-python")
+	deps.writeState(req.StatePath, TaskState{
+		Step: "verify-python", Message: "正在验证 Python 安装...", Percent: 60, Running: true,
+	})
+
+	// find python
+	pythonExe, err := deps.findPython(req.PythonVersion)
+	if err != nil {
+		return finish(TaskState{Step: "error", Error: "安装后未找到 Python: " + err.Error()})
 	}
 
-	// Step 4: Install pip
-	a.emit("pip", "正在安装 pip...", 55, false, "")
-	pythonExe := filepath.Join(targetDir, "python.exe")
-	if err := installPip(pythonExe, mirror); err != nil {
-		return ProgressInfo{Step: "pip", Error: "pip 安装失败: " + err.Error()}
+	// install packages
+	packages := make([]PackageState, len(req.Packages))
+	for i, pkg := range req.Packages {
+		packages[i] = PackageState{Name: pkg, Status: "installing"}
 	}
 
-	// Step 5: Install packages
-	if len(selectedPackages) > 0 {
-		a.emit("packages", fmt.Sprintf("正在安装 %d 个包...", len(selectedPackages)), 70, false, "")
-		if err := installPackages(pythonExe, mirror, selectedPackages); err != nil {
-			a.emit("packages", "部分包安装失败: "+err.Error(), 80, false, "")
+	state = TaskState{
+		Step:      "install-package",
+		Message:   fmt.Sprintf("正在安装 %d 个包...", len(req.Packages)),
+		Percent:   70,
+		Running:   true,
+		PythonExe: pythonExe,
+		Packages:  packages,
+	}
+	deps.writeState(req.StatePath, state)
+
+	allSucceeded := true
+	for i, pkg := range req.Packages {
+		state.Message = fmt.Sprintf("正在安装 %s (%d/%d)...", pkg, i+1, len(req.Packages))
+		state.Percent = 70 + float64(i+1)/float64(len(req.Packages))*20
+		state.Packages[i].Status = "installing"
+		deps.writeState(req.StatePath, state)
+
+		if out, err := deps.runCmd(pythonExe, "-m", "pip", "install", "--no-warn-script-location", pkg); err != nil {
+			state.Packages[i].Status = "failed"
+			state.Packages[i].Error = err.Error()
+			_ = out
+			allSucceeded = false
+		} else {
+			state.Packages[i].Status = "success"
 		}
+		deps.writeState(req.StatePath, state)
+	}
+
+	// done
+	state.Step = "done"
+	state.Running = false
+	state.Done = true
+	state.Percent = 100
+	if allSucceeded {
+		state.Message = "安装完成！"
 	} else {
-		a.emit("packages", "跳过包安装（未选择任何包）", 80, false, "")
+		state.Message = "部分包安装失败"
+	}
+	deps.writeState(req.StatePath, state)
+	return state
+}
+
+// ── Frontend API ──────────────────────────────────────────
+
+func (a *InstallerAPI) InstallWithElevation(packages []string) ProgressInfo {
+	if !common.IsAdmin() {
+		return a.installWithElevationWorker(packages)
+	}
+	return a.installDirect(packages)
+}
+
+// installWithElevationWorker writes a request file, starts the elevated
+// worker, polls the state file, and relays progress via Wails events.
+func (a *InstallerAPI) installWithElevationWorker(packages []string) ProgressInfo {
+	exe, err := os.Executable()
+	if err != nil {
+		return ProgressInfo{Step: "error", Error: "无法获取程序路径: " + err.Error()}
 	}
 
-	// Step 6: Add system PATH
-	a.emit("path", "正在配置系统 PATH...", 85, false, "")
-	if err := addToSystemPath(targetDir); err != nil {
-		a.emit("path", "PATH 配置需要手动处理: "+err.Error(), 85, false, "")
+	// Use config for version
+	cfg := common.LoadConfig()
+	pyVersion := cfg.PyVersion
+	if pyVersion == "" {
+		pyVersion = "3.12.0"
 	}
 
-	// Step 7: Verify
-	a.emit("verify", "正在验证安装...", 92, false, "")
-	st := a.CheckStatus()
+	// Create task directory
+	taskID := fmt.Sprintf("pyenv-%d", time.Now().UnixMilli())
+	taskDir := filepath.Join(os.TempDir(), "Wintools", taskID)
+	if err := os.MkdirAll(taskDir, 0755); err != nil {
+		return ProgressInfo{Step: "error", Error: "无法创建任务目录: " + err.Error()}
+	}
 
-	// Step 8: Done
-	msg := fmt.Sprintf("安装完成！Python %s", st.Version)
-	a.emit("done", msg, 100, true, "")
+	statePath := filepath.Join(taskDir, "state.json")
+	requestPath := filepath.Join(taskDir, "request.json")
+
+	// Write request
+	req := InstallRequest{
+		PythonVersion: pyVersion,
+		Packages:      packages,
+		StatePath:     statePath,
+	}
+	if err := writeTaskState(requestPath, TaskState{}); err != nil {
+		// Reuse write helper — marshal request manually
+	}
+	reqData, _ := json.Marshal(req)
+	if err := os.WriteFile(requestPath, reqData, 0644); err != nil {
+		return ProgressInfo{Step: "error", Error: "无法写入请求文件: " + err.Error()}
+	}
+
+	// Polling goroutine — reads statePath every 300ms and emits events
+	done := make(chan struct{})
+	defer close(done)
+
+	var lastStep, lastMessage, lastError string
+	var lastPercent float64
+	var lastDone bool
+	go func() {
+		ticker := time.NewTicker(300 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				state, err := readTaskState(statePath)
+				if err != nil {
+					continue
+				}
+				if state.Step == lastStep && state.Message == lastMessage &&
+					state.Percent == lastPercent && state.Done == lastDone &&
+					state.Error == lastError {
+					continue
+				}
+				lastStep, lastMessage, lastError = state.Step, state.Message, state.Error
+				lastPercent, lastDone = state.Percent, state.Done
+				a.emit(state.Step, state.Message, state.Percent, state.Done, state.Error)
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	a.emit("elevate", "正在请求管理员权限...", 0, false, "")
+
+	// Start elevated worker
+	err = common.RunElevatedWait(exe, []string{"--install-pyenv-worker", requestPath})
+	if err != nil {
+		return ProgressInfo{Step: "error", Error: "安装失败: " + err.Error()}
+	}
+
+	// Read final state
+	finalState, err := readTaskState(statePath)
+	if err != nil {
+		// Check status as fallback
+		st := a.CheckStatus()
+		if st.Installed {
+			a.emit("done", "安装完成！", 100, true, "")
+			return ProgressInfo{Step: "done", Message: "安装完成！", Percent: 100, Done: true}
+		}
+		return ProgressInfo{Step: "error", Error: "安装似乎未完成，请检查 Python 环境"}
+	}
+
+	if finalState.Error != "" {
+		return ProgressInfo{Step: "error", Error: finalState.Error}
+	}
+
+	a.emit("done", "安装完成！", 100, true, "")
 	return ProgressInfo{
 		Step:    "done",
-		Message: msg,
+		Message: "安装完成！",
 		Percent: 100,
 		Done:    true,
 	}
 }
 
-func (a *InstallerAPI) InstallWithElevation(packages []string) ProgressInfo {
-	if !common.IsAdmin() {
-		exe, _ := os.Executable()
-		common.RunElevated(exe, []string{"--install-pyenv"})
-		return ProgressInfo{Step: "elevate", Message: "正在请求管理员权限...", Percent: 0, Done: false}
+// installDirect runs the installation directly (already elevated).
+func (a *InstallerAPI) installDirect(packages []string) ProgressInfo {
+	cfg := common.LoadConfig()
+	req := InstallRequest{
+		PythonVersion: cfg.PyVersion,
+		Packages:      packages,
+		StatePath:     filepath.Join(os.TempDir(), "wintools-pyenv-direct.json"),
 	}
-	return a.InstallWithPackages(packages)
+	state := runInstallWorker(req, defaultDeps())
+	return ProgressInfo{
+		Step:    state.Step,
+		Message: state.Message,
+		Percent: state.Percent,
+		Done:    state.Done,
+		Error:   state.Error,
+	}
 }
