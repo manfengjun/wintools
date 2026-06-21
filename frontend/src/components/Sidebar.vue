@@ -59,6 +59,7 @@ function isActive(path) {
 .sidebar {
   width: 200px;
   min-width: 200px;
+  flex-shrink: 0;
   background: var(--bg-surface);
   border-right: 1px solid var(--sidebar-border);
   display: flex;
@@ -92,7 +93,7 @@ function isActive(path) {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   padding: 12px 8px;
   overflow-y: auto;
 }
@@ -100,7 +101,7 @@ function isActive(path) {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-radius: 8px;
   text-decoration: none;
   color: var(--text-secondary);
@@ -115,6 +116,10 @@ function isActive(path) {
   background: var(--accent-bg);
   color: var(--accent);
   font-weight: 500;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  margin-left: -8px;
+  padding-left: calc(12px + 8px - 3px);
 }
 .nav-icon { width: 22px; height: 22px; flex-shrink: 0; }
 .nav-label { font-size: 13px; line-height: 1; }

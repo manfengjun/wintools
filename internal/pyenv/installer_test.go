@@ -3,7 +3,9 @@ package pyenv
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -166,5 +168,128 @@ func TestWorkerRunsInstallerOnce(t *testing.T) {
 	}
 	if state.Step != "done" {
 		t.Fatalf("expected done, got %q", state.Step)
+	}
+}
+
+func TestDownloadWithCurlUsesFixedArguments(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "python.zip")
+	var gotName string
+	var gotArgs []string
+	runner := func(name string, args ...string) ([]byte, error) {
+		gotName = name
+		gotArgs = append([]string(nil), args...)
+		return nil, os.WriteFile(dest, []byte("zip"), 0o600)
+	}
+
+	err := downloadWithCurl(`C:\Windows\System32\curl.exe`, "https://example.test/python.zip", dest, runner)
+	if err != nil {
+		t.Fatalf("downloadWithCurl: %v", err)
+	}
+	if gotName != `C:\Windows\System32\curl.exe` {
+		t.Fatalf("command = %q", gotName)
+	}
+	want := []string{
+		"--fail", "--location", "--silent", "--show-error",
+		"--connect-timeout", "10", "--max-time", "120",
+		"--retry", "2", "--retry-delay", "1", "--retry-all-errors",
+		"--output", dest, "https://example.test/python.zip",
+	}
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Fatalf("args = %#v, want %#v", gotArgs, want)
+	}
+}
+
+func TestDownloadFileWithFallsBackAfterCurlFailure(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "python.zip")
+	curlCalls, goCalls := 0, 0
+	err := downloadFileWith("https://example.test/python.zip", dest,
+		func(string, string) error {
+			curlCalls++
+			return errors.New("curl failed")
+		},
+		func(string, string) error {
+			goCalls++
+			return os.WriteFile(dest, []byte("zip"), 0o600)
+		},
+	)
+	if err != nil || curlCalls != 1 || goCalls != 1 {
+		t.Fatalf("err=%v curlCalls=%d goCalls=%d", err, curlCalls, goCalls)
+	}
+}
+
+func TestDownloadFromSourcesFallsBackAndPromotesPart(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "artifact.zip")
+	sources := []DownloadSource{{Name: "one", URL: "one"}, {Name: "two", URL: "two"}}
+	var calls []string
+	err := downloadFromSources(sources, dest, func(url, part string) error {
+		calls = append(calls, url)
+		if url == "one" {
+			_ = os.WriteFile(part, []byte("bad"), 0o600)
+			return errors.New("failed")
+		}
+		return os.WriteFile(part, []byte("good"), 0o600)
+	}, func(path string) error {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if string(data) != "good" {
+			return errors.New("invalid")
+		}
+		return nil
+	}, nil)
+	if err != nil || strings.Join(calls, ",") != "one,two" {
+		t.Fatalf("err=%v calls=%v", err, calls)
+	}
+	if _, err := os.Stat(dest + ".part"); !os.IsNotExist(err) {
+		t.Fatal("part remains")
+	}
+}
+
+func TestDownloadFromSourcesReusesValidCache(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "artifact")
+	if err := os.WriteFile(dest, []byte("cached"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	err := downloadFromSources([]DownloadSource{{Name: "one", URL: "one"}}, dest,
+		func(string, string) error { calls++; return nil },
+		func(string) error { return nil }, nil)
+	if err != nil || calls != 0 {
+		t.Fatalf("err=%v calls=%d", err, calls)
+	}
+}
+
+func TestRunWithPipMirrorsStopsAtFirstSuccess(t *testing.T) {
+	calls := []string{}
+	err := runWithPipMirrors(func(index string) error {
+		calls = append(calls, index)
+		if len(calls) < 2 {
+			return errors.New("failed")
+		}
+		return nil
+	})
+	if err != nil || len(calls) != 2 || calls[0] != DefaultMirrors[0].URL || calls[1] != DefaultMirrors[1].URL {
+		t.Fatalf("err=%v calls=%v", err, calls)
+	}
+}
+
+func TestGetPipInstallBatchTriesMirrorsInOrder(t *testing.T) {
+	batch := getPipInstallBatch(`C:\Python\python.exe`, `C:\Python\get-pip.py`)
+	previous := -1
+	for _, mirror := range DefaultMirrors {
+		position := strings.Index(batch, `--index-url "`+mirror.URL+`"`)
+		if position <= previous {
+			t.Fatalf("mirror %q missing or out of order in batch: %s", mirror.Name, batch)
+		}
+		previous = position
+	}
+	for _, flag := range []string{"--disable-pip-version-check", "--timeout 30", "--retries 2"} {
+		if !strings.Contains(batch, flag) {
+			t.Fatalf("batch missing %q: %s", flag, batch)
+		}
+	}
+	if !strings.Contains(batch, "if errorlevel 1 exit /b 1") || !strings.Contains(batch, ":pip_ok") {
+		t.Fatalf("batch does not fail after exhausting mirrors: %s", batch)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // extractZip extracts a zip file to the target directory.
@@ -138,6 +139,7 @@ func installPip(pythonExe, mirror string) error {
 		args = append(args, "-i", mirror, "--trusted-host", extractHost(mirror))
 	}
 	cmd := exec.Command(pythonExe, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -154,6 +156,7 @@ func installPackages(pythonExe, mirror string, packages []string) error {
 	}
 	args = append(args, packages...)
 	cmd := exec.Command(pythonExe, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -163,7 +166,9 @@ func installPackages(pythonExe, mirror string, packages []string) error {
 func addToSystemPath(installDir string) error {
 	paths := []string{installDir, filepath.Join(installDir, "Scripts")}
 	for _, p := range paths {
-		exec.Command("setx", "/M", "PATH", p+";%PATH%").Run()
+		cmd := exec.Command("setx", "/M", "PATH", p+";%PATH%")
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		cmd.Run()
 	}
 	return nil
 }

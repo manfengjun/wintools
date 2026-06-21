@@ -9,6 +9,31 @@ import (
 	"unsafe"
 )
 
+// Windows ShellExecuteExW constants
+const (
+	seeMaskNoCloseProcess = 0x00000040
+	swShownormal          = 1
+	swHide                = 0
+)
+
+type shellExecuteInfoW struct {
+	cbSize       uint32
+	fMask        uint32
+	hwnd         uintptr
+	lpVerb       *uint16
+	lpFile       *uint16
+	lpParameters *uint16
+	lpDirectory  *uint16
+	nShow        int32
+	hInstApp     uintptr
+	lpIDList     uintptr
+	lpClass      *uint16
+	hkeyClass    uintptr
+	dwHotKey     uint32
+	hMonitor     uintptr
+	hProcess     uintptr
+}
+
 // IsAdmin checks if the current process is running as administrator
 // by attempting to open the physical drive.
 func IsAdmin() bool {
@@ -20,24 +45,15 @@ func IsAdmin() bool {
 	return true
 }
 
-// RunElevated starts a subprocess with administrator rights via ShellExecute "runas".
-// It waits for the process to finish and returns its exit code.
+// RunElevated starts a process with administrator rights via ShellExecuteW "runas".
+// Non-blocking — returns immediately after launching.
 func RunElevated(exePath string, args []string) (int, error) {
 	verb, _ := syscall.UTF16PtrFromString("runas")
 	exe, _ := syscall.UTF16PtrFromString(exePath)
 
-	// Build argument string
-	argStr := ""
-	for i, a := range args {
-		if i > 0 {
-			argStr += " "
-		}
-		argStr += "\"" + a + "\""
-	}
+	argStr := strings.Join(args, " ")
 	argv, _ := syscall.UTF16PtrFromString(argStr)
-	dir, _ := syscall.UTF16PtrFromString("")
 
-	// ShellExecuteW via Shell32
 	shell32 := syscall.NewLazyDLL("shell32.dll")
 	procShellExecuteW := shell32.NewProc("ShellExecuteW")
 
@@ -46,34 +62,75 @@ func RunElevated(exePath string, args []string) (int, error) {
 		uintptr(unsafe.Pointer(verb)),
 		uintptr(unsafe.Pointer(exe)),
 		uintptr(unsafe.Pointer(argv)),
-		uintptr(unsafe.Pointer(dir)),
-		1, // SW_SHOWNORMAL
+		0,
+		swShownormal,
 	)
 
-	// If ret > 32, it's a success (returns instance handle)
-	// If ret <= 32, it's an error
 	if int(ret) <= 32 {
 		return 0, fmt.Errorf("ShellExecuteW failed with code %d", int(ret))
 	}
 	return 0, nil
 }
 
-// RunElevatedWait starts a subprocess with administrator rights and waits for it to finish.
-// It uses Start-Process -Verb RunAs with a correctly quoted -ArgumentList
-// and propagates $process.ExitCode for reliable error detection.
-func RunElevatedWait(exePath string, args []string) error {
-	// Build a comma-separated argument list for Start-Process -ArgumentList
-	// Each arg is individually quoted to handle spaces and special chars.
-	argList := strings.Join(args, " ")
-	psCmd := fmt.Sprintf(`Start-Process -Verb RunAs -FilePath '%s' -ArgumentList @('%s') -Wait -PassThru`,
-		strings.ReplaceAll(exePath, "'", "''"),
-		strings.ReplaceAll(argList, "'", "''"),
-	)
-	cmd := exec.Command("powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", psCmd)
-	return cmd.Run()
+// RunElevatedAndWait starts a process with administrator rights via ShellExecuteExW "runas",
+// waits for it to finish, and returns an error if the exit code is non‑zero.
+// It is the preferred blocking-elevation helper — no PowerShell nesting, no encoding issues.
+func RunElevatedAndWait(exePath string, args []string) error {
+	verb, _ := syscall.UTF16PtrFromString("runas")
+	exe, _ := syscall.UTF16PtrFromString(exePath)
+
+	// Quote each argument to handle spaces
+	quoted := make([]string, len(args))
+	for i, a := range args {
+		quoted[i] = `"` + a + `"`
+	}
+	argStr := strings.Join(quoted, " ")
+	argv, _ := syscall.UTF16PtrFromString(argStr)
+
+	shell32 := syscall.NewLazyDLL("shell32.dll")
+	procShellExecuteExW := shell32.NewProc("ShellExecuteExW")
+
+	info := shellExecuteInfoW{
+		cbSize:       uint32(unsafe.Sizeof(shellExecuteInfoW{})),
+		fMask:        seeMaskNoCloseProcess,
+		lpVerb:       verb,
+		lpFile:       exe,
+		lpParameters: argv,
+		nShow:        swHide,
+	}
+
+	ret, _, _ := procShellExecuteExW.Call(uintptr(unsafe.Pointer(&info)))
+	if ret == 0 {
+		return fmt.Errorf("提权启动失败")
+	}
+
+	// Wait for the process to finish
+	if info.hProcess != 0 {
+		kernel32 := syscall.NewLazyDLL("kernel32.dll")
+		procWait := kernel32.NewProc("WaitForSingleObject")
+		const infinite = 0xFFFFFFFF
+		procWait.Call(info.hProcess, infinite)
+
+		var exitCode uint32
+		procGetExitCode := kernel32.NewProc("GetExitCodeProcess")
+		r, _, _ := procGetExitCode.Call(info.hProcess, uintptr(unsafe.Pointer(&exitCode)))
+
+		procClose := kernel32.NewProc("CloseHandle")
+		procClose.Call(info.hProcess)
+
+		if r != 0 && exitCode != 0 && exitCode != 3010 {
+			return fmt.Errorf("进程退出码: %d", exitCode)
+		}
+	}
+
+	return nil
 }
+
+// RunCommand runs an executable and returns combined stdout+stderr.
+// The child window is hidden so no console flashes.
 func RunCommand(name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }

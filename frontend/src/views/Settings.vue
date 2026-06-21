@@ -4,7 +4,7 @@ import * as theme from '../theme.js'
 import { useT, setLocale, getLocale, detectLanguage, loadLocalePref } from '../locale.js'
 import { VerifyPassword, ChangePassword, ChangeDefaultPassword, IsDefaultPassword } from '../../wailsjs/go/desktoplock/API'
 import { CheckUpdate, DownloadUpdate, ApplyUpdate } from '../../wailsjs/go/updater/API'
-import { IsAutoStart, SetAutoStart } from '../../wailsjs/go/main/App'
+import { IsAutoStart, SetAutoStart, ConfirmQuit, GetVersion } from '../../wailsjs/go/main/App'
 
 const emit = defineEmits(['close'])
 
@@ -116,6 +116,8 @@ async function confirmPwdChange() {
 const updateStatus = ref('')
 const updateInfo = ref(null)
 const downloading = ref(false)
+const downloadPercent = ref(0)
+const appVersion = ref('')
 
 async function checkForUpdate() {
   updateStatus.value = '检查中...'
@@ -123,34 +125,41 @@ async function checkForUpdate() {
   try {
     const info = await CheckUpdate()
     if (info.error) {
-      updateStatus.value = '检查失败: ' + info.error
+      updateStatus.value = t('settings.checkFailed') + ': ' + info.error
       return
     }
     updateInfo.value = info
     if (info.has_update) {
-      updateStatus.value = '发现新版本 v' + info.version
+      updateStatus.value = t('settings.updateFound') + ' v' + info.version
     } else {
-      updateStatus.value = '已是最新版本 v' + info.version
+      updateStatus.value = t('settings.updateLatest') + ' v' + info.version
     }
   } catch (e) {
-    updateStatus.value = '检查失败: ' + String(e)
+    updateStatus.value = t('settings.checkFailed') + ': ' + String(e)
   }
 }
 
 async function doUpdate() {
   if (!updateInfo.value || !updateInfo.value.download_url) return
   downloading.value = true
-  updateStatus.value = '正在下载更新...'
+  downloadPercent.value = 0
+  updateStatus.value = t('settings.downloading')
   try {
     const path = await DownloadUpdate(updateInfo.value.download_url)
     if (!path) {
-      updateStatus.value = '下载失败'
+      updateStatus.value = t('settings.downloadFailed')
       downloading.value = false
       return
     }
-    updateStatus.value = '正在应用更新...'
-    await ApplyUpdate(path)
-    // ApplyUpdate 会退出进程，下面的代码通常不会执行
+    updateStatus.value = t('settings.applyingUpdate')
+    const err = await ApplyUpdate(path)
+    if (err) {
+      updateStatus.value = '更新失败: ' + err
+      downloading.value = false
+      return
+    }
+    // 安装脚本已启动，关闭应用以允许安装包替换文件
+    ConfirmQuit()
   } catch (e) {
     updateStatus.value = '更新失败: ' + String(e)
     downloading.value = false
@@ -164,18 +173,28 @@ onMounted(() => {
   fontSize.value = s.fontSize
   fontFamily.value = s.fontFamily
   localePref.value = loadLocalePref()
+
+  // 监听更新下载进度
+  window.runtime.EventsOn('update:download-progress', (data) => {
+    if (data && data.percent !== undefined) {
+      downloadPercent.value = data.percent
+    }
+  })
 })
 
 // 切到管理密码分类时检查是否是默认密码
-watch(activeCategory, (cat) => {
+watch(activeCategory, async (cat) => {
   if (cat === 'password') {
     checkDefaultPwd()
   }
   if (cat === 'update') {
-    // 无需加载配置，更新检测自动用 GitHub 检测、Gitee 下载
+    // 无需加载配置
   }
   if (cat === 'startup') {
     loadAutoStart()
+  }
+  if (cat === 'about') {
+    try { appVersion.value = await GetVersion() } catch { appVersion.value = '' }
   }
 })
 
@@ -227,9 +246,9 @@ function onLocaleChange() {
           </button>
         </nav>
         <div class="settings-content">
-
-          <!-- ═══ Appearance ═══ -->
-          <div v-if="activeCategory === 'appearance'">
+          <transition name="category-fade" mode="out-in">
+            <!-- ═══ Appearance ═══ -->
+            <div v-if="activeCategory === 'appearance'" key="appearance">
             <h3 class="content-title">{{ t('settings.appearance') }}</h3>
             <p class="content-subtitle">{{ t('settings.appearanceSub') }}。</p>
             <section class="setting-section">
@@ -383,19 +402,24 @@ function onLocaleChange() {
             <p class="content-subtitle">{{ t('settings.updateSub') }}。</p>
             <section class="setting-section" style="max-width:420px;">
               <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
-                更新检测通过 GitHub 获取版本信息，下载文件来自 Gitee。
+                {{ t('settings.updateDesc') }}
               </p>
               <button class="btn btn-primary btn-sm" @click="checkForUpdate"
                       :disabled="downloading">
                 {{ t('settings.checkUpdate') }}
               </button>
               <div v-if="updateStatus" style="margin-top:12px;font-size:14px;color:var(--text-secondary);">
-                {{ updateStatus }}
+                {{ updateStatus }}<span v-if="downloading && downloadPercent > 0"> {{ downloadPercent }}%</span>
+              </div>
+              <div v-if="downloading && downloadPercent > 0" style="margin-top:8px;">
+                <div class="progress-bar" style="max-width:300px;">
+                  <div class="progress-fill" :style="{ width: downloadPercent + '%' }"></div>
+                </div>
               </div>
               <div v-if="updateInfo && updateInfo.has_update" style="margin-top:16px;">
-                <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px;white-space:pre-wrap;max-height:120px;overflow-y:auto;">
-                  {{ updateInfo.release_notes }}
-                </div>
+                <p style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">
+                  {{ t('settings.updateAvailable') }}
+                </p>
                 <button class="btn btn-success btn-sm" @click="doUpdate"
                         :disabled="downloading">
                   {{ downloading ? t('settings.downloading') : t('settings.updateNow') }}
@@ -404,16 +428,16 @@ function onLocaleChange() {
             </section>
           </div>
 
-          <!-- ═══ About ═══ -->
-          <div v-if="activeCategory === 'about'">
+          <div v-if="activeCategory === 'about'" key="about">
             <h3 class="content-title">{{ t('settings.about') }}</h3>
-            <p class="content-subtitle">{{ t('about.title') }} · {{ t('about.version') }}</p>
+            <p class="content-subtitle">{{ t('about.title') }} · v{{ appVersion || t('about.version') }}</p>
             <section class="setting-section">
               <div style="line-height:2;">
-                <div><strong>{{ t('app.name') }}</strong> <span class="version-tag">{{ t('about.version') }}</span></div>
+                <div><strong>{{ t('app.name') }}</strong> <span class="version-tag">v{{ appVersion || t('about.version') }}</span></div>
                 <div style="color:var(--text-muted);font-size:13px;">{{ t('app.tagline') }}</div>
                 <div style="color:var(--text-muted);font-size:13px;margin-top:8px;">{{ t('settings.aboutBuiltWith') }}</div>
-                <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-default);font-size:13px;">
+                  <hr class="divider" />
+                  <div style="font-size:13px;">
                   <div style="color:var(--text-secondary);">© 2026 manfengjun</div>
                   <div style="color:var(--text-muted);margin-top:4px;">
                     <a href="https://github.com/manfengjun/wintools" target="_blank" rel="noopener"
@@ -424,7 +448,7 @@ function onLocaleChange() {
               </div>
             </section>
           </div>
-
+          </transition>
         </div>
       </div>
     </div>
@@ -587,6 +611,20 @@ function onLocaleChange() {
 }
 .toggle-switch.active .toggle-knob {
   transform: translateX(20px);
+}
+
+/* ── 分类切换动画 ── */
+.category-fade-enter-active,
+.category-fade-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.category-fade-enter-from {
+  opacity: 0;
+  transform: translateX(8px);
+}
+.category-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-8px);
 }
 
 .toast-enter-active { animation: slideDown 0.25s ease; }

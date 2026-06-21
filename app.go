@@ -35,6 +35,7 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.DesktopLock.Startup(ctx)
 	a.PyEnv.Startup(ctx)
+	a.Updater.Startup(ctx)
 
 	go func() {
 		time.Sleep(500 * time.Millisecond)
@@ -104,6 +105,11 @@ func (a *App) ConfirmQuit() {
 	if a.ctx != nil {
 		wailsRuntime.Quit(a.ctx)
 	}
+}
+
+// GetVersion 返回当前应用版本号，供 About 页面显示。
+func (a *App) GetVersion() string {
+	return updater.CurrentVersion
 }
 
 // IsAutoStart 返回是否已注册开机自启动。

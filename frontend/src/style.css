@@ -37,7 +37,7 @@
   --text-placeholder: #aaaaaa;
   --text-on-accent: #ffffff;
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05), 0 1px 4px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.15);
   --overlay-bg: rgba(0, 0, 0, 0.35);
@@ -225,10 +225,23 @@ body {
   line-height: 1.4;
   animation: slideDown var(--transition-normal) ease;
 }
-.toast-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
-.toast-error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
-.toast-info    { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
-.toast-warning { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+.toast-global {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 300;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  pointer-events: none;
+}
+.toast-success { background: #10b981; color: #fff; }
+.toast-error   { background: #ef4444; color: #fff; }
+.toast-info    { background: var(--color-primary); color: #fff; }
+.toast-warning { background: #f59e0b; color: #fff; }
 
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-8px); }
@@ -298,6 +311,21 @@ body {
   transition: width 0.4s ease;
 }
 
+/* ── Spinner 旋转动画 ── */
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+.btn-outline .spinner {
+  border-color: rgba(from var(--color-primary) r g b / 0.2);
+  border-top-color: var(--color-primary);
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* ── 区块标题 ── */
 .section-title {
   font-size: 1rem;
@@ -325,6 +353,27 @@ body {
 .dialog h3 { font-size: 1.14rem; font-weight: 600; margin-bottom: 8px; }
 .dialog p { font-size: 1rem; color: var(--text-muted); margin-bottom: 16px; }
 
+/* ── 间距与布局工具 ── */
+.mb-8  { margin-bottom: 8px; }
+.mb-12 { margin-bottom: 12px; }
+.mb-16 { margin-bottom: 16px; }
+.mb-20 { margin-bottom: 20px; }
+.mt-8  { margin-top: 8px; }
+.mt-12 { margin-top: 12px; }
+.mt-16 { margin-top: 16px; }
+.gap-8  { gap: 8px; }
+.gap-10 { gap: 10px; }
+.gap-12 { gap: 12px; }
+.gap-16 { gap: 16px; }
+
+.flex-center   { display: flex; align-items: center; justify-content: center; }
+.flex-between  { display: flex; align-items: center; justify-content: space-between; }
+.flex-row      { display: flex; align-items: center; }
+.flex-wrap     { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.btn-flex { flex: 1; }
+.divider  { border: none; border-top: 1px solid var(--border-default); margin: 16px 0; }
+
 /* ── 工具类 ── */
 .sr-only {
   position: absolute; width: 1px; height: 1px;
@@ -338,6 +387,18 @@ code {
   border-radius: 4px;
   font-size: 0.86rem;
   color: var(--text-secondary);
+}
+.empty-state {
+  font-size: 13px;
+  color: var(--text-placeholder);
+  padding: 20px 0;
+  text-align: center;
+}
+.backup-list-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
 }
 
 /* ── 桌面锁状态横幅（被 deep selector 覆盖） ── */

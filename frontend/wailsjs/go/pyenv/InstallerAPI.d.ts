@@ -7,8 +7,10 @@ export function AvailablePackages():Promise<Array<pyenv.PackageInfo>>;
 
 export function CheckStatus():Promise<pyenv.InstallStatus>;
 
-export function InstallWithElevation(arg1:Array<string>):Promise<pyenv.ProgressInfo>;
+export function InstallPackages(arg1:Array<string>):Promise<pyenv.ProgressInfo>;
 
-export function InstallWithPackages(arg1:Array<string>):Promise<pyenv.ProgressInfo>;
+export function InstallPython():Promise<pyenv.ProgressInfo>;
+
+export function InstallWithElevation(arg1:Array<string>):Promise<pyenv.ProgressInfo>;
 
 export function Startup(arg1:context.Context):Promise<void>;

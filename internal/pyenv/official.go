@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // ── Installer spec ────────────────────────────────────────
@@ -44,6 +45,7 @@ func findInstalledPython(version string) (string, error) {
 	roots := []string{
 		os.Getenv("ProgramFiles"),
 		os.Getenv("ProgramFiles(x86)"),
+		"C:\\",
 	}
 	return findPythonInRoots(version, roots)
 }
@@ -75,6 +77,7 @@ func findPythonInRoots(version string, roots []string) (string, error) {
 // combined stdout+stderr.
 func runCommand(exe string, args ...string) (string, error) {
 	cmd := exec.Command(exe, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }

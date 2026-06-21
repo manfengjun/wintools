@@ -6,6 +6,10 @@ export function ConfirmQuit() {
   return window['go']['main']['App']['ConfirmQuit']();
 }
 
+export function GetVersion() {
+  return window['go']['main']['App']['GetVersion']();
+}
+
 export function IsAutoStart() {
   return window['go']['main']['App']['IsAutoStart']();
 }

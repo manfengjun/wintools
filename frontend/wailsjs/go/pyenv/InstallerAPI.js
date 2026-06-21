@@ -10,12 +10,16 @@ export function CheckStatus() {
   return window['go']['pyenv']['InstallerAPI']['CheckStatus']();
 }
 
-export function InstallWithElevation(arg1) {
-  return window['go']['pyenv']['InstallerAPI']['InstallWithElevation'](arg1);
+export function InstallPackages(arg1) {
+  return window['go']['pyenv']['InstallerAPI']['InstallPackages'](arg1);
 }
 
-export function InstallWithPackages(arg1) {
-  return window['go']['pyenv']['InstallerAPI']['InstallWithPackages'](arg1);
+export function InstallPython() {
+  return window['go']['pyenv']['InstallerAPI']['InstallPython']();
+}
+
+export function InstallWithElevation(arg1) {
+  return window['go']['pyenv']['InstallerAPI']['InstallWithElevation'](arg1);
 }
 
 export function Startup(arg1) {
