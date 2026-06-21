@@ -1,0 +1,5 @@
+码力工坊已经在 GitHub 和 Gitee 开源。
+打开 GitHub，搜索 manfengjun 斜杠 wintools，就能查看完整源码。
+国内访问可以使用 Gitee：gitee.com 斜杠 3672830 斜杠 wintools。
+进入 Releases，下载 Wintools Windows x86 64 安装包即可。
+欢迎老师和开发者一起完善这款课堂工具。

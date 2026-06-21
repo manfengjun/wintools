@@ -1,0 +1,10 @@
+[1:v]scale=1000:625:flags=lanczos[screen];
+[0:v][screen]overlay=40:380[base];
+[base]
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='新电脑配置 Python，只要一键':fontcolor=0x4B2DAA:fontsize=58:x=(w-text_w)/2:y=150,
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='Python 3.12 · pip · pygame · numpy':fontcolor=0x6B5B95:fontsize=30:x=(w-text_w)/2:y=1080,
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='给课堂电脑安装 Python，最怕版本不一致、下载慢、依赖装不全。':fontcolor=white:fontsize=32:x=(w-text_w)/2:y=1320:box=1:boxcolor=black@0.62:boxborderw=18:enable='between(t,0.1,5.835)',
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='打开码力工坊的 Python 环境，点击一键安装。':fontcolor=white:fontsize=36:x=(w-text_w)/2:y=1320:box=1:boxcolor=black@0.62:boxborderw=18:enable='between(t,5.785,9.654)',
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='自动下载 Python 3.12，并配置常用教学库。':fontcolor=white:fontsize=36:x=(w-text_w)/2:y=1320:box=1:boxcolor=black@0.62:boxborderw=18:enable='between(t,9.654,16.297)',
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='版本、路径和 pip 状态一目了然。':fontcolor=white:fontsize=38:x=(w-text_w)/2:y=1320:box=1:boxcolor=black@0.62:boxborderw=18:enable='between(t,16.297,20.654)',
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='新电脑也能快速投入课堂。':fontcolor=white:fontsize=40:x=(w-text_w)/2:y=1320:box=1:boxcolor=black@0.62:boxborderw=18:enable='between(t,20.654,23.226)'[v]

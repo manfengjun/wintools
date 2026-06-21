@@ -12,10 +12,23 @@ import (
 )
 
 var allowedDemoCommands = map[string]bool{
-	"lock":     true,
-	"unlock":   true,
-	"show":     true,
-	"minimize": true,
+	"lock":          true,
+	"unlock":        true,
+	"show":          true,
+	"minimize":      true,
+	"python-demo":   true,
+	"overview-demo": true,
+}
+
+func demoNavigationScript(command string) (string, error) {
+	switch command {
+	case "python-demo":
+		return `location.hash = '#/py-env'; setTimeout(() => window.dispatchEvent(new CustomEvent('wintools-demo-pyenv')), 1200);`, nil
+	case "overview-demo":
+		return `location.hash = '#/desktop-lock'; setTimeout(() => { location.hash = '#/py-env'; }, 4500); setTimeout(() => window.dispatchEvent(new CustomEvent('wintools-demo-settings')), 9500);`, nil
+	default:
+		return "", errors.New("unsupported demo navigation command")
+	}
 }
 
 func demoCommandFromArgs(args []string) (string, bool) {
@@ -66,6 +79,13 @@ func handleDemoSecondInstance(app *App, args []string) bool {
 		wailsRuntime.WindowMinimise(app.ctx)
 	case "lock", "unlock":
 		script, err := demoPasswordScript(command, os.Getenv("WINTOOLS_DEMO_PASSWORD"))
+		if err != nil {
+			return true
+		}
+		app.showMainWindow()
+		wailsRuntime.WindowExecJS(app.ctx, script)
+	case "python-demo", "overview-demo":
+		script, err := demoNavigationScript(command)
 		if err != nil {
 			return true
 		}

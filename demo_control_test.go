@@ -20,6 +20,30 @@ func TestDemoCommandRejectsUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestPythonDemoScriptNavigatesAndDispatchesSafeDemo(t *testing.T) {
+	script, err := demoNavigationScript("python-demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"#/py-env", "wintools-demo-pyenv"} {
+		if !strings.Contains(script, expected) {
+			t.Fatalf("script missing %q", expected)
+		}
+	}
+}
+
+func TestOverviewDemoScriptVisitsCoreSurfaces(t *testing.T) {
+	script, err := demoNavigationScript("overview-demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"#/desktop-lock", "#/py-env", "wintools-demo-settings"} {
+		if !strings.Contains(script, expected) {
+			t.Fatalf("script missing %q", expected)
+		}
+	}
+}
+
 func TestPasswordScriptRequiresPassword(t *testing.T) {
 	if _, err := demoPasswordScript("lock", ""); err == nil {
 		t.Fatal("expected empty password to be rejected")

@@ -38,6 +38,8 @@ onMounted(() => {
       showToast(payload.message, payload.type || 'info')
     }
   })
+
+  window.addEventListener('wintools-demo-settings', openSettings)
 })
 
 async function confirmQuitPwd() {

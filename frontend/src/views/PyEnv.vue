@@ -5,6 +5,7 @@ import { useT } from '../locale.js'
 
 import { AvailablePackages, CheckStatus, InstallPython, InstallPackages } from '../../wailsjs/go/pyenv/InstallerAPI'
 import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime.js'
+import { playPyEnvDemo } from './pyEnvDemo.js'
 
 const installed = ref(false)
 const pythonExe = ref('')
@@ -22,6 +23,7 @@ const pkgLogContainer = ref(null)
 const t = useT()
 
 let eventsCancel = null
+let demoListener = null
 
 function addLog(logArr, container, msg, type = 'info') {
   logArr.value.push({ msg, type, time: new Date().toLocaleTimeString() })
@@ -104,8 +106,31 @@ function toggleAll(checked) {
   packages.value.forEach(p => { p.checked = checked })
 }
 
-onMounted(() => { checkStatus(); listenProgress(); loadPackages() })
-onUnmounted(() => { if (eventsCancel) eventsCancel() })
+async function runSafeInstallDemo() {
+  pyLog.value = []
+  await playPyEnvDemo({
+    setState: state => {
+      installed.value = state.installed
+      installingPython.value = state.installing
+      version.value = state.version
+      pythonExe.value = state.pythonExe
+      pipInstalled.value = state.pipInstalled
+    },
+    addLog: (message, type) => addLog(pyLog, pyLogContainer, message, type),
+  })
+}
+
+onMounted(() => {
+  checkStatus()
+  listenProgress()
+  loadPackages()
+  demoListener = () => runSafeInstallDemo()
+  window.addEventListener('wintools-demo-pyenv', demoListener)
+})
+onUnmounted(() => {
+  if (eventsCancel) eventsCancel()
+  if (demoListener) window.removeEventListener('wintools-demo-pyenv', demoListener)
+})
 </script>
 
 <template>
