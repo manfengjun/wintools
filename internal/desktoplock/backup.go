@@ -1,6 +1,7 @@
 package desktoplock
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -82,7 +83,28 @@ func publicDesktopPath() string {
 	return filepath.Join(os.Getenv("PUBLIC"), "Desktop")
 }
 
-// scanDesktopShortcuts 扫描用户桌面和公用桌面，返回所有 .lnk / .url 文件名。
+// originFile 返回备份目录中记录快捷方式来源的清单文件路径。
+func originFile() string { return filepath.Join(backupDir(), ".origin.json") }
+
+// saveOrigin 保存快捷方式来源清单：{文件名: "user"|"public"}
+func saveOrigin(origin map[string]string) error {
+	data, _ := json.MarshalIndent(origin, "", "  ")
+	os.MkdirAll(backupDir(), 0755)
+	return os.WriteFile(originFile(), data, 0644)
+}
+
+// loadOrigin 读取快捷方式来源清单。
+func loadOrigin() map[string]string {
+	data, err := os.ReadFile(originFile())
+	if err != nil {
+		return nil
+	}
+	var origin map[string]string
+	json.Unmarshal(data, &origin)
+	return origin
+}
+
+// scanDesktopShortcuts 扫描用户桌面和公用桌面，返回所有 .lnk/.url 文件名。
 // 公用桌面存放系统级安装的程序快捷方式（如 Chrome、微信、QQ），
 // Windows Explorer 会在桌面视图合并显示两个目录的内容。
 func scanDesktopShortcuts() []string {
@@ -121,6 +143,48 @@ func scanDesktopShortcuts() []string {
 	return result
 }
 
+// scanDesktopShortcutsWithOrigin 同 scanDesktopShortcuts，同时返回来源映射。
+func scanDesktopShortcutsWithOrigin() ([]string, map[string]string) {
+	origin := map[string]string{}
+	seen := map[string]bool{}
+	var result []string
+
+	userDir := desktopPath()
+	pubDir := publicDesktopPath()
+
+	for _, pair := range [][2]string{{userDir, "user"}, {pubDir, "public"}} {
+		dir, label := pair[0], pair[1]
+		if dir == "" {
+			continue
+		}
+		f, err := os.Open(dir)
+		if err != nil {
+			continue
+		}
+		names, err := f.Readdirnames(-1)
+		f.Close()
+		if err != nil {
+			continue
+		}
+		for _, name := range names {
+			if seen[name] {
+				continue
+			}
+			low := strings.ToLower(name)
+			if !strings.HasSuffix(low, ".lnk") && !strings.HasSuffix(low, ".url") {
+				continue
+			}
+			info, err := os.Stat(filepath.Join(dir, name))
+			if err == nil && !info.IsDir() {
+				seen[name] = true
+				result = append(result, name)
+				origin[name] = label
+			}
+		}
+	}
+	return result, origin
+}
+
 // scanBackupDir 扫描备份目录，返回文件名列表（.lnk/.url 过滤）。
 func scanBackupDir() []string {
 	bd := backupDir()
@@ -137,6 +201,9 @@ func scanBackupDir() []string {
 
 	var files []string
 	for _, name := range names {
+		if name == ".origin.json" {
+			continue
+		}
 		path := filepath.Join(bd, name)
 		info, err := os.Stat(path)
 		if err != nil || info.IsDir() {
@@ -180,14 +247,19 @@ func scanUserShortcuts() []string {
 
 // Backup 备份桌面快捷方式到备份目录（扫描用户桌面 + 公用桌面，供手动备份使用）。
 func (a *API) Backup() BackupResult {
-	return backupShortcuts(scanDesktopShortcuts())
+	names, origin := scanDesktopShortcutsWithOrigin()
+	result := backupShortcuts(names)
+	if len(origin) > 0 {
+		saveOrigin(origin)
+	}
+	return result
 }
 
-// backupLockShortcuts 仅备份用户桌面快捷方式（供 Lock 使用），不扫描公用桌面。
-// 避免锁定后公用桌面图标被复制到用户桌面造成重复。
+// backupLockShortcuts 仅备份用户桌面快捷方式（供 Lock 使用）。
 func backupLockShortcuts() error {
 	bd := backupDir()
 	os.MkdirAll(bd, 0755)
+	origin := map[string]string{}
 	for _, name := range scanUserShortcuts() {
 		src := filepath.Join(desktopPath(), name)
 		data, err := os.ReadFile(src)
@@ -197,6 +269,10 @@ func backupLockShortcuts() error {
 		if err := os.WriteFile(filepath.Join(bd, name), data, 0644); err != nil {
 			continue
 		}
+		origin[name] = "user"
+	}
+	if len(origin) > 0 {
+		saveOrigin(origin)
 	}
 	return nil
 }
@@ -242,12 +318,15 @@ func resolveShortcutPath(name string) string {
 }
 
 // Restore 从备份目录恢复缺失的快捷方式到桌面。
+// 根据 .origin.json 记录的来源恢复到对应目录，避免重复。
 func (a *API) Restore() RestoreResult {
 	bd := backupDir()
 	if _, err := os.Stat(bd); os.IsNotExist(err) {
 		return RestoreResult{Error: "没有找到备份"}
 	}
-	desktop := desktopPath()
+	origin := loadOrigin()
+	userDir := desktopPath()
+	pubDir := publicDesktopPath()
 	restored := 0
 	skipped := 0
 
@@ -259,13 +338,25 @@ func (a *API) Restore() RestoreResult {
 			continue
 		}
 		name := filepath.Base(path)
-		target := filepath.Join(desktop, name)
-		if _, err := os.Stat(target); err == nil {
-			skipped++
+		if name == ".origin.json" {
 			continue
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
+			continue
+		}
+
+		// 根据来源选择目标目录
+		var target string
+		switch origin[name] {
+		case "public":
+			target = filepath.Join(pubDir, name)
+		default:
+			target = filepath.Join(userDir, name)
+		}
+
+		if _, err := os.Stat(target); err == nil {
+			skipped++
 			continue
 		}
 		os.WriteFile(target, data, 0644)
@@ -274,7 +365,8 @@ func (a *API) Restore() RestoreResult {
 
 	if restored > 0 {
 		common.Info("恢复 %d 个快捷方式", restored)
-		refreshDesktop(desktop)
+		refreshDesktop(userDir)
+		refreshDesktop(pubDir)
 	}
 	return RestoreResult{Restored: restored, Skipped: skipped}
 }
