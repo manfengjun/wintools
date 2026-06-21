@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"unsafe"
 
 	"github.com/manfengjun/wintools/internal/common"
 	"golang.org/x/sys/windows"
@@ -223,8 +224,31 @@ func (a *API) Restore() RestoreResult {
 
 	if restored > 0 {
 		common.Info("恢复 %d 个快捷方式", restored)
+		refreshDesktop(desktop)
 	}
 	return RestoreResult{Restored: restored, Skipped: skipped}
+}
+
+// SHChangeNotify 通知 Windows Shell 刷新桌面视图。
+const (
+	shcnfPath  = 0x0001
+	shcnfFlush = 0x1000
+	shcneUpdateDir = 0x0008
+)
+
+func refreshDesktop(dir string) {
+	pathPtr, err := syscall.UTF16PtrFromString(dir)
+	if err != nil {
+		return
+	}
+	shell32 := syscall.NewLazyDLL("shell32.dll")
+	proc := shell32.NewProc("SHChangeNotify")
+	proc.Call(
+		uintptr(shcneUpdateDir),
+		uintptr(shcnfPath|shcnfFlush),
+		uintptr(unsafe.Pointer(pathPtr)),
+		0,
+	)
 }
 
 // ListBackups 返回备份文件列表。
