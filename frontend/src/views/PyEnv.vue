@@ -1,45 +1,31 @@
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import IconPython from '../components/icons/IconPython.vue'
 import { useT } from '../locale.js'
-import { initialProgress, applyProgress } from './pyEnvProgress.js'
 
-// 使用 Wails 生成的绑定模块
-import { AvailablePackages, CheckStatus, InstallWithElevation } from '../../wailsjs/go/pyenv/InstallerAPI'
-
-const t = useT()
+import { AvailablePackages, CheckStatus, InstallPython, InstallPackages } from '../../wailsjs/go/pyenv/InstallerAPI'
 
 const installed = ref(false)
 const pythonExe = ref('')
 const version = ref('')
 const pipInstalled = ref(false)
-const installing = ref(false)
-const log = ref([])
-const logContainer = ref(null)
-const packages = ref([])
 
-// Progress reducer state
-const progress = reactive(initialProgress())
+const installingPython = ref(false)
+const pyLog = ref([])
+const pyLogContainer = ref(null)
+
+const packages = ref([])
+const installingPkgs = ref(false)
+const pkgLog = ref([])
+const pkgLogContainer = ref(null)
+const t = useT()
 
 let eventsCancel = null
 
-// ── 包列表 ──
-async function loadPackages() {
-  try {
-    const pkgs = await AvailablePackages()
-    packages.value = pkgs.map(p => ({ ...p, checked: p.default_on }))
-  } catch (e) {
-    addLog('加载包列表失败: ' + String(e), 'error')
-  }
-}
-
-// ── 日志（用于 reducer 未覆盖的 UI 日志）──
-function addLog(msg, type = 'info') {
-  log.value.push({ msg, type, time: new Date().toLocaleTimeString() })
+function addLog(logArr, container, msg, type = 'info') {
+  logArr.value.push({ msg, type, time: new Date().toLocaleTimeString() })
   nextTick(() => {
-    if (logContainer.value) {
-      logContainer.value.scrollTop = logContainer.value.scrollHeight
-    }
+    if (container.value) container.value.scrollTop = container.value.scrollHeight
   })
 }
 
@@ -51,57 +37,67 @@ async function checkStatus() {
     version.value = s.version
     pipInstalled.value = s.pip_installed
   } catch (e) {
-    addLog(t('pyEnv.logStatusFailed') + ': ' + String(e), 'error')
+    addLog(pyLog, pyLogContainer, t('pyEnv.logStatusFailed') + ': ' + String(e), 'error')
+  }
+}
+
+async function loadPackages() {
+  try {
+    const pkgs = await AvailablePackages()
+    packages.value = pkgs.map(p => ({ ...p, checked: p.default_on }))
+  } catch (e) {
+    addLog(pkgLog, pkgLogContainer, t('pyEnv.logFailed') + ': ' + String(e), 'error')
   }
 }
 
 function listenProgress() {
   if (typeof window.runtime !== 'undefined' && window.runtime.EventsOn) {
     window.runtime.EventsOn('pyenv:progress', (data) => {
-      // Apply event through the reducer
-      const event = {
-        step: data.step || '',
-        message: data.message || '',
-        percent: data.percent,
-        done: data.done,
-        error: data.error,
-        package: data.package,
-        package_status: data.package_status,
+      const msg = data.message || data.step || ''
+      if (!msg) return
+      const isErr = !!data.error
+      const isDone = !!data.done
+      if (data.step === 'install-package') {
+        addLog(pkgLog, pkgLogContainer, (isErr ? '❌ ' : isDone ? '✅ ' : '') + msg, isErr ? 'error' : isDone ? 'success' : 'info')
+      } else {
+        addLog(pyLog, pyLogContainer, (isErr ? '❌ ' : isDone ? '✅ ' : '') + msg, isErr ? 'error' : 'info')
       }
-      const next = applyProgress(progress, event)
-      Object.assign(progress, next)
-
-      installing.value = next.installing
-
-      if (data.message) addLog(data.message, data.error ? 'error' : data.done ? 'success' : 'info')
-      if (data.error) addLog('❌ ' + data.error, 'error')
-      if (data.done) { installing.value = false; checkStatus() }
     })
     eventsCancel = () => window.runtime.EventsOff('pyenv:progress')
   }
 }
 
-async function startInstall() {
-  installing.value = true
-  installing.value = true
-  log.value = []
-
-  // Reset progress via reducer
-  const selected = packages.value.filter(p => p.checked).map(p => p.id)
-  const fresh = initialProgress(selected)
-  Object.assign(progress, fresh)
-
-  addLog(t('pyEnv.logStart'))
-  addLog('选择包: ' + (selected.length > 0 ? selected.join(', ') : '（无）'))
-
+async function doInstallPython() {
+  installingPython.value = true
+  pyLog.value = []
+  addLog(pyLog, pyLogContainer, t('pyEnv.startInstall'))
   try {
-    const result = await InstallWithElevation(selected)
-    if (result && result.error) addLog('❌ ' + result.error, 'error')
-    else if (result && result.done) addLog('✅ ' + (result.message || t('pyEnv.logDone')), 'success')
+    const result = await InstallPython()
+    if (result && result.error) addLog(pyLog, pyLogContainer, '❌ ' + result.error, 'error')
   } catch (e) {
-    addLog('❌ ' + t('pyEnv.logFailed') + ': ' + String(e), 'error')
+    addLog(pyLog, pyLogContainer, '❌ ' + t('pyEnv.logFailed') + ': ' + String(e), 'error')
   }
-  installing.value = false
+  installingPython.value = false
+  await checkStatus()
+}
+
+async function doInstallPackages() {
+  const selected = packages.value.filter(p => p.checked).map(p => p.id)
+  if (selected.length === 0) {
+    addLog(pkgLog, pkgLogContainer, t('pyEnv.selectPackageHint'), 'error')
+    return
+  }
+  installingPkgs.value = true
+  pkgLog.value = []
+  addLog(pkgLog, pkgLogContainer, t('pyEnv.startInstallPkgs').replace('{n}', selected.length))
+  addLog(pkgLog, pkgLogContainer, t('pyEnv.selectedPackages') + selected.join(', '))
+  try {
+    const result = await InstallPackages(selected)
+    if (result && result.error) addLog(pkgLog, pkgLogContainer, '❌ ' + result.error, 'error')
+  } catch (e) {
+    addLog(pkgLog, pkgLogContainer, '❌ ' + t('pyEnv.logFailed') + ': ' + String(e), 'error')
+  }
+  installingPkgs.value = false
   await checkStatus()
 }
 
@@ -109,86 +105,82 @@ function toggleAll(checked) {
   packages.value.forEach(p => { p.checked = checked })
 }
 
-// Show the progress card whenever we have active or visible events
-const showProgress = computed(() => progress.visible || progress.logs.length > 0)
-
 onMounted(() => { checkStatus(); listenProgress(); loadPackages() })
 onUnmounted(() => { if (eventsCancel) eventsCancel() })
 </script>
 
 <template>
-  <div class="page" style="max-width:600px;">
-    <div class="page-header">
-      <h1 class="page-title">
-        <IconPython :size="24" aria-hidden="true" /> {{ t('pyEnv.title') }}
-      </h1>
-      <p class="page-desc">{{ t('pyEnv.desc') }}</p>
-    </div>
+  <div class="page" style="max-width:680px;">
 
-    <!-- Status -->
-    <div class="card" style="margin-bottom:20px;">
-      <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px;">
-        <div class="status-dot-lg" :class="{ ok: installed, none: !installed }" aria-hidden="true"></div>
-        <div>
-          <div style="font-weight:600;">{{ installed ? t('pyEnv.installed') : t('pyEnv.notInstalled') }}</div>
-          <div v-if="version" style="font-size:13px;color:var(--text-muted);">{{ version.trim() }}</div>
-        </div>
-      </div>
-      <div v-if="installed" style="font-size:13px;color:var(--text-secondary);">
-        <span style="color:var(--text-placeholder);">{{ t('pyEnv.path') }}：</span><code>{{ pythonExe }}</code>
-      </div>
-    </div>
-
-    <!-- Progress + Log (visible while installing OR after completion/error) -->
-    <div v-if="showProgress" class="card" style="margin-bottom:20px;">
-      <div style="margin-bottom:12px;">
-        <div style="font-weight:600;font-size:14px;margin-bottom:4px;">
-          {{ progress.message || (installing ? t('common.loading') : '') }}
-        </div>
-        <!-- Determinate progress bar -->
-        <div v-if="progress.step !== 'install-python'" class="progress-bar">
-          <div class="progress-fill" :style="{width: progress.percent + '%'}" role="progressbar"
-               :aria-valuenow="progress.percent" aria-valuemin="0" aria-valuemax="100"></div>
-        </div>
-        <!-- Indeterminate progress bar during install-python -->
-        <div v-else class="progress-bar indeterminate">
-          <div class="progress-fill" role="progressbar" aria-label="安装进行中..."></div>
-        </div>
-      </div>
-
-      <!-- Package statuses -->
-      <div v-if="Object.keys(progress.packages).length > 0" style="margin-bottom:12px;">
-        <div class="pkg-status-grid">
-          <div v-for="(status, name) in progress.packages" :key="name" class="pkg-status-item" :class="'pkg-' + status">
-            <span class="pkg-status-icon">{{ status === 'success' ? '✓' : status === 'failed' ? '✗' : status === 'installing' ? '⟳' : '○' }}</span>
-            <span class="pkg-status-name">{{ name }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Log box -->
-      <div class="log-box" ref="logContainer">
-        <div v-for="(entry,i) in log" :key="i" class="log-line" :class="entry.type">
-          <span class="log-time">{{ entry.time }}</span><span>{{ entry.msg }}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Package Selection -->
-    <div class="card" style="margin-bottom:20px;">
-      <h2 class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
-        <span>安装包选择</span>
-        <span style="font-size:12px;color:var(--text-muted);font-weight:400;">
-          <label style="cursor:pointer;margin-right:12px;">
-            <input type="checkbox" :checked="packages.length > 0 && packages.every(p=>p.checked)"
-                   @change="e => toggleAll(e.target.checked)" /> 全选
-          </label>
-          {{ packages.filter(p=>p.checked).length }}/{{ packages.length }}
+    <!-- ═══════════════════════════════════════ -->
+    <!--  步骤 1：安装 Python 环境               -->
+    <!-- ═══════════════════════════════════════ -->
+    <div class="card card-hoverable">
+      <div class="section-header">
+        <IconPython :size="22" aria-hidden="true" />
+        <h2 class="section-title" style="margin:0;">{{ t('pyEnv.sectionTitle') }}</h2>
+        <span class="badge" :class="installed ? 'badge-ok' : 'badge-none'">
+          <span class="badge-dot"></span>
+          {{ installed ? t('pyEnv.statusInstalled') : t('pyEnv.statusNotInstalled') }}
         </span>
-      </h2>
+      </div>
+
+      <p class="page-desc">{{ t('pyEnv.desc') }}</p>
+
+      <!-- 状态详情 -->
+      <div v-if="installed" class="status-grid">
+        <div class="status-item">
+          <span class="status-label">{{ t('pyEnv.labelVersion') }}</span>
+          <code class="status-value">{{ version.trim() }}</code>
+        </div>
+        <div class="status-item">
+          <span class="status-label">{{ t('pyEnv.labelPath') }}</span>
+          <code class="status-value status-path">{{ pythonExe }}</code>
+        </div>
+        <div class="status-item">
+          <span class="status-label">{{ t('pyEnv.labelPip') }}</span>
+          <code class="status-value">{{ pipInstalled ? t('pyEnv.statusInstalled') : t('pyEnv.statusNotInstalled') }}</code>
+        </div>
+      </div>
+
+      <!-- 安装日志 -->
+      <div v-if="pyLog.length > 0" class="log-box" ref="pyLogContainer">
+        <div v-for="(entry,i) in pyLog" :key="i" class="log-entry" :class="'log-'+entry.type">
+          <span class="log-bullet"></span>
+          <span class="log-time">{{ entry.time }}</span>
+          <span class="log-msg">{{ entry.msg }}</span>
+        </div>
+      </div>
+
+      <!-- 按钮 -->
+      <button class="btn" :class="installed ? 'btn-outline' : 'btn-primary'"
+              :disabled="installingPython" @click="doInstallPython">
+        <span v-if="installingPython" class="spinner"></span>
+        {{ installingPython ? t('pyEnv.installing') : (installed ? t('pyEnv.reinstall') : t('pyEnv.install')) }}
+      </button>
+    </div>
+
+    <!-- ═══════════════════════════════════════ -->
+    <!--  步骤 2：安装 Python 库                -->
+    <!-- ═══════════════════════════════════════ -->
+    <div class="card card-hoverable">
+      <div class="section-header">
+        <span class="icon-lib" aria-hidden="true">📚</span>
+        <h2 class="section-title" style="margin:0;">{{ t('pyEnv.packageSection') }}</h2>
+        <span v-if="!installed" class="badge badge-warn">
+          <span class="badge-dot"></span>{{ t('pyEnv.needInstallFirst') }}
+        </span>
+        <span v-else class="badge badge-count">{{ packages.filter(p=>p.checked).length }}/{{ packages.length }}</span>
+      </div>
+
+      <p class="page-desc">{{ t('pyEnv.installingDesc') }}</p>
+
+      <!-- 包选择 -->
       <div class="pkg-grid">
-        <label v-for="pkg in packages" :key="pkg.id" class="pkg-item" :class="{ disabled: installing }">
-          <input type="checkbox" v-model="pkg.checked" :disabled="installing" class="pkg-check" />
+        <label v-for="pkg in packages" :key="pkg.id" class="pkg-item"
+               :class="{ disabled: !installed || installingPkgs }">
+          <input type="checkbox" v-model="pkg.checked"
+                 :disabled="!installed || installingPkgs" class="pkg-check" />
           <span class="pkg-checkmark" aria-hidden="true"></span>
           <span class="pkg-info">
             <span class="pkg-name">{{ pkg.name }}</span>
@@ -196,137 +188,226 @@ onUnmounted(() => { if (eventsCancel) eventsCancel() })
           </span>
         </label>
       </div>
-    </div>
 
-    <!-- Install Button -->
-    <div class="card">
-      <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.7;">
-        {{ t('pyEnv.installingDesc').replace('{path}', 'Python 官方安装目录（所有用户）') }}
-      </p>
-      <button class="btn" :class="installed?'btn-outline':'btn-primary'" :disabled="installing"
-              @click="startInstall" :aria-label="installing ? t('pyEnv.installing') : (installed ? t('pyEnv.reinstallBtn') : t('pyEnv.installBtn'))">
-        <template v-if="installing"><span class="spinner" aria-hidden="true"></span>{{ t('pyEnv.installing') }}</template>
-        <template v-else>{{ installed ? t('pyEnv.reinstallBtn') : t('pyEnv.installBtn') }}</template>
+      <!-- 全选 -->
+      <div class="select-all-row">
+        <label class="select-all-label">
+          <input type="checkbox"
+                 :checked="packages.length > 0 && packages.every(p=>p.checked)"
+                 @change="e => toggleAll(e.target.checked)"
+                 :disabled="!installed || installingPkgs" />
+          {{ t('pyEnv.selectAll') }}
+        </label>
+      </div>
+
+      <!-- 安装日志 -->
+      <div v-if="pkgLog.length > 0" class="log-box" ref="pkgLogContainer">
+        <div v-for="(entry,i) in pkgLog" :key="i" class="log-entry" :class="'log-'+entry.type">
+          <span class="log-bullet"></span>
+          <span class="log-time">{{ entry.time }}</span>
+          <span class="log-msg">{{ entry.msg }}</span>
+        </div>
+      </div>
+
+      <!-- 按钮 -->
+      <button class="btn btn-primary" :disabled="!installed || installingPkgs"
+              @click="doInstallPackages">
+        <span v-if="installingPkgs" class="spinner"></span>
+        {{ installingPkgs ? t('pyEnv.installing') : t('pyEnv.installSelected') }}
       </button>
     </div>
+
   </div>
 </template>
 
 <style scoped>
-.status-dot-lg {
-  width:16px;height:16px;border-radius:50%;flex-shrink:0;
-  transition:background var(--transition-fast);
+/* ── 卡片悬浮效果 ── */
+.card-hoverable {
+  transition: box-shadow 0.2s, transform 0.2s;
 }
-.status-dot-lg.ok { background: var(--color-success); }
-.status-dot-lg.none { background: var(--text-placeholder); }
+.card-hoverable:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
 
+/* ── 分区头部 ── */
+.section-header {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:10px;
+}
+
+/* ── 徽标 ── */
+.badge {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  margin-left:auto;
+  font-size:12px;
+  font-weight:600;
+  padding:3px 10px;
+  border-radius:20px;
+  white-space:nowrap;
+}
+.badge-dot {
+  width:8px;height:8px;
+  border-radius:50%;
+  display:inline-block;
+}
+.badge-ok { background:var(--color-success-bg,#e6f7e6);color:var(--color-success,#389e0d); }
+.badge-ok .badge-dot { background:var(--color-success); }
+.badge-none { background:var(--bg-code);color:var(--text-placeholder); }
+.badge-none .badge-dot { background:var(--text-placeholder); }
+.badge-warn { background:var(--color-warning-bg,#fff7e6);color:var(--color-warning,#d48806); }
+.badge-warn .badge-dot { background:var(--color-warning); }
+.badge-count { background:var(--accent-bg);color:var(--color-primary); }
+
+/* ── 状态网格 ── */
+.status-grid {
+  display:flex;
+  flex-wrap:wrap;
+  gap:4px 20px;
+  margin-bottom:14px;
+  padding:10px 12px;
+  background:var(--bg-code);
+  border-radius:var(--radius-sm);
+}
+.status-item {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:13px;
+}
+.status-label {
+  color:var(--text-placeholder);
+  font-size:12px;
+}
+.status-value {
+  color:var(--text-secondary);
+  font-size:13px;
+  font-weight:500;
+}
+.status-path {
+  max-width:280px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+/* ── 日志时间线 ── */
 .log-box {
-  max-height:220px;overflow-y:auto;
-  background:var(--bg-code);border-radius:var(--radius-sm);padding:12px;
-  font-family:var(--font-mono);font-size:12px;line-height:1.7;
+  max-height:200px;
+  overflow-y:auto;
+  margin-bottom:14px;
 }
-.log-line { color:var(--text-secondary); }
-.log-line.success { color:var(--color-success); }
-.log-line.error   { color:var(--color-danger);  }
-.log-line.info    { color:var(--text-secondary); }
-.log-time { color:var(--text-placeholder);margin-right:8px;user-select:none; }
-
-.spinner {
-  display:inline-block;width:14px;height:14px;
-  border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;
-  border-radius:50%;animation:spin 0.6s linear infinite;
+.log-entry {
+  display:flex;
+  align-items:flex-start;
+  gap:8px;
+  padding:3px 0;
+  font-family:var(--font-mono);
+  font-size:12px;
+  line-height:1.7;
+  border-left:2px solid transparent;
+  padding-left:8px;
+  transition:border-color 0.15s;
 }
-@keyframes spin { to { transform:rotate(360deg); } }
+.log-entry:hover {
+  border-left-color:var(--border-default);
+}
+.log-bullet {
+  flex-shrink:0;
+  width:6px;height:6px;
+  border-radius:50%;
+  margin-top:7px;
+  background:var(--text-placeholder);
+}
+.log-info .log-bullet { background:var(--color-primary); }
+.log-success .log-bullet { background:var(--color-success); }
+.log-error .log-bullet { background:var(--color-danger); }
+.log-time {
+  flex-shrink:0;
+  color:var(--text-placeholder);
+  font-size:11px;
+  min-width:52px;
+  user-select:none;
+}
+.log-msg {
+  color:var(--text-secondary);
+  word-break:break-all;
+}
+.log-success .log-msg { color:var(--color-success); }
+.log-error .log-msg { color:var(--color-danger); }
 
 /* ── 包选择网格 ── */
 .pkg-grid {
   display:grid;
-  grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns:repeat(auto-fill, minmax(185px, 1fr));
   gap:8px;
+  margin-bottom:10px;
 }
 .pkg-item {
-  display:flex;
-  align-items:center;
-  gap:10px;
-  padding:10px 12px;
+  display:flex;align-items:center;gap:10px;
+  padding:9px 12px;
   border:1px solid var(--border-default);
   border-radius:var(--radius-sm);
   cursor:pointer;
-  transition:all var(--transition-fast);
+  transition:all 0.15s, border-color 0.15s;
   user-select:none;
 }
-.pkg-item:hover { border-color:var(--color-primary); }
-.pkg-item.disabled { opacity:0.6; cursor:not-allowed; }
+.pkg-item:hover:not(.disabled) {
+  border-color:var(--color-primary);
+  box-shadow:0 1px 4px rgba(from var(--color-primary) r g b / 0.08);
+}
+.pkg-item.disabled { opacity:0.5; cursor:not-allowed; }
 .pkg-item:has(.pkg-check:checked) {
   border-color:var(--color-primary);
   background:var(--accent-bg);
 }
-.pkg-check {
-  position:absolute;opacity:0;width:0;height:0;
-}
+.pkg-check { position:absolute;opacity:0;width:0;height:0; }
 .pkg-checkmark {
   width:18px;height:18px;border-radius:4px;
   border:2px solid var(--border-input);
   display:flex;align-items:center;justify-content:center;
-  flex-shrink:0;transition:all var(--transition-fast);
+  flex-shrink:0;transition:all 0.15s;
 }
 .pkg-checkmark::after {
-  content:'✓';
-  font-size:12px;font-weight:700;
+  content:'✓';font-size:12px;font-weight:700;
   color:#fff;transform:scale(0);
-  transition:transform var(--transition-fast);
+  transition:transform 0.15s;
 }
 .pkg-check:checked + .pkg-checkmark {
   background:var(--color-primary);border-color:var(--color-primary);
 }
 .pkg-check:checked + .pkg-checkmark::after { transform:scale(1); }
 .pkg-check:focus-visible + .pkg-checkmark {
-  box-shadow:0 0 0 3px rgba(79,110,247,0.2);
+  box-shadow:0 0 0 3px rgba(from var(--color-primary) r g b / 0.2);
 }
-.pkg-info {
-  display:flex;flex-direction:column;gap:1px;
-  min-width:0;
-}
-.pkg-name {
-  font-size:13px;font-weight:600;color:var(--text-primary);
-}
-.pkg-desc {
-  font-size:11px;color:var(--text-muted);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-}
+.pkg-info { display:flex;flex-direction:column;gap:2px;min-width:0; }
+.pkg-name { font-size:13px;font-weight:600;color:var(--text-primary); }
+.pkg-desc { font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 
-/* ── 进度包状态网格 ── */
-.pkg-status-grid {
+/* ── 全选行 ── */
+.select-all-row {
   display:flex;
-  flex-wrap:wrap;
-  gap:6px;
-}
-.pkg-status-item {
-  display:inline-flex;
   align-items:center;
-  gap:4px;
-  padding:3px 8px;
-  border-radius:var(--radius-sm);
-  font-size:12px;
-  background:var(--bg-code);
+  margin-bottom:12px;
 }
-.pkg-status-icon {
-  font-size:12px;
-  width:14px;
-  text-align:center;
+.select-all-label {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:13px;
+  color:var(--text-muted);
+  cursor:pointer;
+  user-select:none;
 }
-.pkg-pending   { color:var(--text-placeholder); }
-.pkg-installing { color:var(--color-primary); }
-.pkg-success   { color:var(--color-success); }
-.pkg-failed    { color:var(--color-danger); }
 
-/* ── 不确定进度条 ── */
-.progress-bar.indeterminate .progress-fill {
-  width:30%;
-  animation: indeterminate 1.5s ease-in-out infinite;
-}
-@keyframes indeterminate {
-  0%   { transform:translateX(-100%); }
-  100% { transform:translateX(400%); }
+.icon-lib { font-size:22px; }
+
+/* ── 日志条目逐项进入 ── */
+.log-entry {
+  animation: fadeIn 0.2s ease both;
 }
 </style>

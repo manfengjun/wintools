@@ -3,6 +3,8 @@
 
 export function ConfirmQuit():Promise<void>;
 
+export function GetVersion():Promise<string>;
+
 export function IsAutoStart():Promise<boolean>;
 
 export function SetAutoStart(arg1:boolean):Promise<boolean>;

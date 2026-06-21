@@ -21,3 +21,7 @@ export function GetUpdateURL() {
 export function SetUpdateURL(arg1) {
   return window['go']['updater']['API']['SetUpdateURL'](arg1);
 }
+
+export function Startup(arg1) {
+  return window['go']['updater']['API']['Startup'](arg1);
+}

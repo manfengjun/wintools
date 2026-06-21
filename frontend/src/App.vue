@@ -75,7 +75,7 @@ function closeSettings() {
 
     <!-- ═══ 统一 Toast 通知 ═══ -->
     <transition name="toast">
-      <div v-if="toast" class="toast-global" :class="'toast-' + toastType" role="alert">
+      <div v-if="toast" class="toast-global toast" :class="'toast-' + toastType" role="alert">
         {{ toast }}
       </div>
     </transition>
@@ -109,29 +109,4 @@ function closeSettings() {
   padding: 32px;
 }
 
-/* ── 全局 Toast ── */
-.toast-global {
-  position: fixed;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 300;
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  pointer-events: none;
-}
-.toast-success { background: #10b981; color: #fff; }
-.toast-warning { background: #f59e0b; color: #fff; }
-.toast-error { background: #ef4444; color: #fff; }
-.toast-info { background: var(--color-primary); color: #fff; }
-
-.toast-enter-active { animation: slideDown 0.25s ease; }
-.toast-leave-active { animation: slideDown 0.2s ease reverse; }
-@keyframes slideDown {
-  from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
-  to { opacity: 1; transform: translateX(-50%) translateY(0); }
-}
 </style>

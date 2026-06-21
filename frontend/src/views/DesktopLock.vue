@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import IconLock from '../components/icons/IconLock.vue'
 import { useT } from '../locale.js'
 import { Status, Lock, Unlock, Backup, Restore, VerifyPassword, ListBackups, DeleteBackup } from '../../wailsjs/go/desktoplock/API'
+import { EventsEmit } from '../../wailsjs/runtime/runtime.js'
 import { normalizeBackupItems } from './desktopLockBackups.js'
 
 const locked = ref(false)
@@ -13,18 +14,10 @@ const statusText = ref('')
 const showPwdDialog = ref(false)
 const pwdInput = ref('')
 const pwdError = ref('')
-const toast = ref('')
-const toastType = ref('info')
 const backupList = ref([])
 const showBackupList = ref(false)
 const confirmDeleteTarget = ref('')
 const t = useT()
-
-function showToast(msg, type = 'info') {
-  toast.value = msg
-  toastType.value = type
-  setTimeout(() => { toast.value = '' }, 3000)
-}
 
 async function refreshStatus() {
   try {
@@ -41,25 +34,25 @@ async function refreshStatus() {
 
 async function doLock() {
   await Lock()
-  showToast(t('desktopLock.lockedToast'), 'success')
+  EventsEmit('notify', { message: t('desktopLock.lockedToast'), type: 'success' })
   refreshStatus()
 }
 
 async function doUnlock() {
   await Unlock()
-  showToast(t('desktopLock.unlockedToast'), 'success')
+  EventsEmit('notify', { message: t('desktopLock.unlockedToast'), type: 'success' })
   refreshStatus()
 }
 
 async function doBackup() {
   const r = await Backup()
-  showToast(t('desktopLock.backupToast').replace('{n}', r.ok), 'success')
+  EventsEmit('notify', { message: t('desktopLock.backupToast').replace('{n}', r.ok), type: 'success' })
   refreshStatus()
 }
 
 async function doRestore() {
   const r = await Restore()
-  showToast(t('desktopLock.restoreToast').replace('{n}', r.restored), 'success')
+  EventsEmit('notify', { message: t('desktopLock.restoreToast').replace('{n}', r.restored), type: 'success' })
   refreshStatus()
 }
 
@@ -93,11 +86,11 @@ async function confirmDelete() {
   const ok = await DeleteBackup(name)
   confirmDeleteTarget.value = ''
   if (ok) {
-    showToast(t('desktopLock.deleteBackupToast').replace('{name}', name), 'success')
+    EventsEmit('notify', { message: t('desktopLock.deleteBackupToast').replace('{name}', name), type: 'success' })
     backupList.value = normalizeBackupItems(await ListBackups())
     refreshStatus()
   } else {
-    showToast(t('desktopLock.deleteBackupFail'), 'error')
+    EventsEmit('notify', { message: t('desktopLock.deleteBackupFail'), type: 'error' })
   }
 }
 
@@ -147,7 +140,7 @@ onMounted(refreshStatus)
       <span class="status-label">{{ statusText }}</span>
     </div>
 
-    <div class="stats-grid" style="margin-bottom: 20px;">
+    <div class="stats-grid mb-20">
       <div class="stat-card">
         <span class="stat-num">{{ backupCount }}</span>
         <span class="stat-label">{{ t('desktopLock.statsBackup') }}</span>
@@ -162,23 +155,19 @@ onMounted(refreshStatus)
       </div>
     </div>
 
-    <transition name="toast">
-      <div v-if="toast" class="toast" :class="'toast-' + toastType" style="margin-bottom: 16px;" role="alert">
-        {{ toast }}
-      </div>
-    </transition>
+    <!-- Toast 已迁移至 App.vue 全局 -->
 
-    <div class="card" style="margin-bottom: 16px;">
-      <div style="display: flex; gap: 12px;">
+    <div class="card mb-16">
+      <div class="flex-row gap-12">
         <button
           v-if="!locked"
-          class="btn btn-primary" style="flex:1;"
+          class="btn btn-primary btn-flex"
           @click="verifyAndLock"
           :aria-label="t('desktopLock.lock')"
         >{{ t('desktopLock.lock') }}</button>
         <button
           v-if="locked"
-          class="btn btn-success" style="flex:1;"
+          class="btn btn-success btn-flex"
           @click="verifyAndLock"
           :aria-label="t('desktopLock.unlock')"
         >{{ t('desktopLock.unlock') }}</button>
@@ -187,7 +176,7 @@ onMounted(refreshStatus)
 
     <div class="card">
       <h2 class="section-title">{{ t('desktopLock.shortcut') }}</h2>
-      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <div class="flex-wrap">
         <button class="btn btn-outline btn-sm" @click="doBackup">{{ t('desktopLock.backup') }}</button>
         <button class="btn btn-outline btn-sm" @click="doRestore">{{ t('desktopLock.restore') }}</button>
         <button class="btn btn-outline btn-sm" @click="listBackups">
@@ -195,8 +184,10 @@ onMounted(refreshStatus)
         </button>
       </div>
 
-      <div v-if="showBackupList" style="margin-top:16px;border-top:1px solid var(--border-default);padding-top:16px;">
-        <p style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:12px;">
+      <transition name="backup-panel">
+        <div v-if="showBackupList" class="mt-16">
+          <hr class="divider" />
+          <p class="backup-list-title">
           {{ t('desktopLock.backupList') }}（{{ backupList.length }}）
         </p>
 
@@ -228,20 +219,21 @@ onMounted(refreshStatus)
           </div>
         </div>
 
-        <div v-else style="font-size:13px;color:var(--text-placeholder);padding:20px 0;text-align:center;">
+        <div v-else class="empty-state">
           {{ t('desktopLock.noBackups') }}
         </div>
-      </div>
+        </div>
+      </transition>
 
-      <div v-if="missing.length > 0" style="margin-top: 14px;">
-        <p style="font-size:12px;color:var(--color-danger);margin-bottom:6px;">
+      <div v-if="missing.length > 0" class="mt-14">
+        <p class="missing-title">
           {{ t('desktopLock.missingTitle').replace('{n}', missing.length) }}
         </p>
         <div v-for="name in missing.slice(0, 10)" :key="name"
-             style="font-size:12px;color:var(--text-muted);padding:3px 0;border-bottom:1px solid var(--border-default);">
+             class="missing-item">
           {{ name }}
         </div>
-        <div v-if="missing.length > 10" style="font-size:12px;color:var(--text-placeholder);margin-top:4px;">
+        <div v-if="missing.length > 10" class="missing-more">
           {{ t('desktopLock.missingMore').replace('{n}', missing.length - 10) }}
         </div>
       </div>
@@ -277,9 +269,6 @@ onMounted(refreshStatus)
 </template>
 
 <style scoped>
-.toast-enter-active { animation: slideDown 0.25s ease; }
-.toast-leave-active { animation: slideDown 0.2s ease reverse; }
-
 .pwd-error {
   margin-top: 10px;
   font-size: 13px;
@@ -288,6 +277,32 @@ onMounted(refreshStatus)
   padding: 8px 12px;
   border-radius: 6px;
   border: 1px solid rgba(229, 72, 77, 0.2);
+}
+
+/* 备份列表展开/收起动画 */
+.backup-panel-enter-active,
+.backup-panel-leave-active {
+  transition: max-height 0.25s ease, opacity 0.25s ease;
+  overflow: hidden;
+}
+.backup-panel-enter-from,
+.backup-panel-leave-to {
+  max-height: 0;
+  opacity: 0;
+}
+.backup-panel-enter-to,
+.backup-panel-leave-from {
+  max-height: 600px;
+  opacity: 1;
+}
+
+/* 密码弹窗进入动画 */
+.dialog-enter-active {
+  animation: dialogIn 0.2s ease;
+}
+@keyframes dialogIn {
+  from { opacity: 0; transform: scale(0.95) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 .backup-table {
@@ -375,6 +390,25 @@ onMounted(refreshStatus)
 
 .dialog-sm {
   max-width: 380px;
+}
+
+/* ── 缺失图标列表样式 ── */
+.mt-14 { margin-top: 14px; }
+.missing-title {
+  font-size: 12px;
+  color: var(--color-danger);
+  margin-bottom: 6px;
+}
+.missing-item {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border-default);
+}
+.missing-more {
+  font-size: 12px;
+  color: var(--text-placeholder);
+  margin-top: 4px;
 }
 
 </style>
