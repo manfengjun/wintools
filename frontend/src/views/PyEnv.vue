@@ -4,6 +4,7 @@ import IconPython from '../components/icons/IconPython.vue'
 import { useT } from '../locale.js'
 
 import { AvailablePackages, CheckStatus, InstallPython, InstallPackages } from '../../wailsjs/go/pyenv/InstallerAPI'
+import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime.js'
 
 const installed = ref(false)
 const pythonExe = ref('')
@@ -51,20 +52,18 @@ async function loadPackages() {
 }
 
 function listenProgress() {
-  if (typeof window.runtime !== 'undefined' && window.runtime.EventsOn) {
-    window.runtime.EventsOn('pyenv:progress', (data) => {
-      const msg = data.message || data.step || ''
-      if (!msg) return
-      const isErr = !!data.error
-      const isDone = !!data.done
-      if (data.step === 'install-package') {
-        addLog(pkgLog, pkgLogContainer, (isErr ? '❌ ' : isDone ? '✅ ' : '') + msg, isErr ? 'error' : isDone ? 'success' : 'info')
-      } else {
-        addLog(pyLog, pyLogContainer, (isErr ? '❌ ' : isDone ? '✅ ' : '') + msg, isErr ? 'error' : 'info')
-      }
-    })
-    eventsCancel = () => window.runtime.EventsOff('pyenv:progress')
-  }
+  EventsOn('pyenv:progress', (data) => {
+    const msg = data.message || data.step || ''
+    if (!msg) return
+    const isErr = !!data.error
+    const isDone = !!data.done
+    if (data.step === 'install-package') {
+      addLog(pkgLog, pkgLogContainer, (isErr ? '❌ ' : isDone ? '✅ ' : '') + msg, isErr ? 'error' : isDone ? 'success' : 'info')
+    } else {
+      addLog(pyLog, pyLogContainer, (isErr ? '❌ ' : isDone ? '✅ ' : '') + msg, isErr ? 'error' : 'info')
+    }
+  })
+  eventsCancel = () => EventsOff('pyenv:progress')
 }
 
 async function doInstallPython() {

@@ -32,7 +32,7 @@ func (a *API) CheckUpdate() UpdateInfo {
 
 // DownloadUpdate 下载更新（带进度通知），返回下载文件路径
 func (a *API) DownloadUpdate(url string) string {
-	client := newHTTPClient(0) // 无超时，大文件下载
+	client := newHTTPClient(900 * time.Second) // 15 分钟超时，大文件下载
 	resp, err := client.Get(url)
 	if err != nil {
 		return ""
@@ -102,7 +102,7 @@ func (a *API) GetUpdateURL() string {
 	if cfg.UpdateURL != "" {
 		return cfg.UpdateURL
 	}
-	return GitHubLatestReleaseAPI
+	return DefaultUpdateAPI
 }
 
 // SetUpdateURL 设置更新源 URL

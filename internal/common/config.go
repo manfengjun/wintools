@@ -39,7 +39,11 @@ func LoadConfig() *Config {
 		c := DefaultConfig
 		return &c
 	}
-	json.Unmarshal(data, cfg)
+	if err := json.Unmarshal(data, cfg); err != nil {
+		Warn("config.json 解析失败，使用默认配置: %v", err)
+		c := DefaultConfig
+		return &c
+	}
 	return cfg
 }
 

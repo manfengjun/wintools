@@ -14,8 +14,7 @@ func TestCheckReleaseFindsNewVersionAndSetupAsset(t *testing.T) {
 			"tag_name":"v1.0.3",
 			"body":"修复更新检测",
 			"assets":[
-				{"name":"Wintools_Windows_x86_64.exe","browser_download_url":"https://example.test/app.exe"},
-				{"name":"Wintools_Windows_x86_64_Setup.exe","browser_download_url":"https://example.test/setup.exe"}
+				{"name":"Wintools_Windows_x86_64.exe","browser_download_url":"https://example.test/setup.exe"}
 			]
 		}`))
 	}))
