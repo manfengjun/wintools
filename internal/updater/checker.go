@@ -22,23 +22,17 @@ import (
 const (
 	CurrentVersion = "1.1.0"
 
-	// GitHub raw VERSION 文件（免认证、无限流，首选）
-	GitHubVersionRaw = "https://raw.githubusercontent.com/manfengjun/wintools/master/VERSION"
-
-	// Gitee raw VERSION 文件（国内网络友好，免认证，备选）
+	// Gitee raw VERSION 文件（免认证，检测更新用）
 	GiteeVersionRaw = "https://gitee.com/3672830/wintools/raw/master/VERSION"
-
-	// 下载 URL 模板：GitHub Release 资源路径
-	GitHubDownloadTemplate = "https://github.com/manfengjun/wintools/releases/download/v%s/Wintools_Windows_x86_64.exe"
 
 	// 下载 URL 模板：Gitee Release 资源路径
 	GiteeDownloadTemplate = "https://gitee.com/3672830/wintools/releases/download/v%s/Wintools_Windows_x86_64.exe"
 
-	// Gitee Releases 页面（全部检测失败时提示用户手动前往）
+	// Gitee Releases 页面（检测失败时提示用户手动前往）
 	GiteeReleasesPage = "https://gitee.com/3672830/wintools/releases"
 
 	// 默认更新源 URL（用于设置页面的显示与自定义）
-	DefaultUpdateAPI = "https://api.github.com/repos/manfengjun/wintools/releases/latest"
+	DefaultUpdateAPI = "https://gitee.com/3672830/wintools/releases"
 )
 
 // UpdateInfo 更新检测结果
@@ -189,27 +183,14 @@ func checkVersionRaw(client *http.Client, url, currentVersion string) (bool, str
 	return false, remoteVersion, true
 }
 
-// Check 检查最新版本，按优先级尝试多种源。
+// Check 检查最新版本。
 // 返回 UpdateInfo，其中 HasUpdate=true 表示有新版本。
-// 检测链：GitHub raw → Gitee raw → 手动下载提示。
+// 检测源：Gitee raw VERSION 文件。
 func Check() UpdateInfo {
 	client := newHTTPClient(10 * time.Second)
 
-	// 1. GitHub raw VERSION 文件 — 海外用户首选，免认证无限流
-	hasUpdate, ver, ok := checkVersionRaw(client, GitHubVersionRaw, CurrentVersion)
-	if ok {
-		if hasUpdate {
-			return UpdateInfo{
-				HasUpdate:   true,
-				Version:     ver,
-				DownloadURL: fmt.Sprintf(GitHubDownloadTemplate, ver),
-			}
-		}
-		return UpdateInfo{Version: CurrentVersion}
-	}
-
-	// 2. Gitee raw VERSION 文件 — 国内网络友好，免认证
-	hasUpdate, ver, ok = checkVersionRaw(client, GiteeVersionRaw, CurrentVersion)
+	// Gitee raw VERSION 文件 — 免认证直读
+	hasUpdate, ver, ok := checkVersionRaw(client, GiteeVersionRaw, CurrentVersion)
 	if ok {
 		if hasUpdate {
 			return UpdateInfo{
@@ -221,7 +202,7 @@ func Check() UpdateInfo {
 		return UpdateInfo{Version: CurrentVersion}
 	}
 
-	// 3. 全部失败 → 提示手动前往 Gitee 下载
+	// 全部失败 → 提示手动前往 Gitee 下载
 	return UpdateInfo{
 		Error: fmt.Sprintf("检测失败，请手动下载更新\n%s", GiteeReleasesPage),
 	}

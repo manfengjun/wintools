@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/manfengjun/wintools/internal/common"
+	"golang.org/x/sys/windows/registry"
 )
 
 // ── Directories ────────────────────────────────────────────
@@ -22,10 +23,28 @@ func appDataDir() string {
 func configPath() string { return filepath.Join(appDataDir(), "lock-config.json") }
 func backupDir() string  { return filepath.Join(appDataDir(), "lock-backup") }
 
+// desktopPath 从注册表读取实际桌面目录路径。
+// OneDrive 已知文件夹移动或企业重定向时，实际桌面不是 USERPROFILE\Desktop。
+// 回退到硬编码的 USERPROFILE\Desktop。
+func desktopPath() string {
+	k, err := registry.OpenKey(registry.CURRENT_USER,
+		`Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders`,
+		registry.QUERY_VALUE)
+	if err == nil {
+		defer k.Close()
+		val, _, err := k.GetStringValue("Desktop")
+		if err == nil && val != "" {
+			// 展开 %USERPROFILE% 等环境变量
+			return os.ExpandEnv(val)
+		}
+	}
+	return filepath.Join(os.Getenv("USERPROFILE"), "Desktop")
+}
+
 // scanDesktopShortcuts 扫描桌面，返回所有 .lnk / .url 文件名。
 // 使用 os.Open + Readdirnames（避免 os.ReadDir 的 DirEntry.Info 在部分 Windows 上报错）。
 func scanDesktopShortcuts() []string {
-	desktop := filepath.Join(os.Getenv("USERPROFILE"), "Desktop")
+	desktop := desktopPath()
 	f, err := os.Open(desktop)
 	if err != nil {
 		common.Warn("scanDesktopShortcuts: 打开桌面目录失败: %v", err)
@@ -90,7 +109,7 @@ func (a *API) Backup() BackupResult {
 	skipped := 0
 
 	for _, name := range scanDesktopShortcuts() {
-		src := filepath.Join(os.Getenv("USERPROFILE"), "Desktop", name)
+		src := filepath.Join(desktopPath(), name)
 		dst := filepath.Join(bd, name)
 		data, err := os.ReadFile(src)
 		if err != nil {
@@ -115,7 +134,7 @@ func (a *API) Restore() RestoreResult {
 	if _, err := os.Stat(bd); os.IsNotExist(err) {
 		return RestoreResult{Error: "没有找到备份"}
 	}
-	desktop := filepath.Join(os.Getenv("USERPROFILE"), "Desktop")
+	desktop := desktopPath()
 	restored := 0
 	skipped := 0
 
