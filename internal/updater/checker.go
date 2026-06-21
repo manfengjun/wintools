@@ -2,6 +2,7 @@
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,8 +23,8 @@ import (
 const (
 	CurrentVersion = "1.1.1"
 
-	// Gitee raw VERSION 文件（免认证，检测更新用）
-	GiteeVersionRaw = "https://gitee.com/3672830/wintools/raw/master/VERSION"
+	// Gitee API VERSION 文件（仓库已公开，免 token 直读）
+	GiteeVersionAPI = "https://gitee.com/api/v5/repos/3672830/wintools/contents/VERSION"
 
 	// 下载 URL 模板：Gitee Release 资源路径
 	GiteeDownloadTemplate = "https://gitee.com/3672830/wintools/releases/download/v%s/Wintools_Windows_x86_64.exe"
@@ -185,14 +186,14 @@ func checkVersionRaw(client *http.Client, url, currentVersion string) (bool, str
 
 // Check 检查最新版本。
 // 返回 UpdateInfo，其中 HasUpdate=true 表示有新版本。
-// 检测源：Gitee raw VERSION 文件。
+// 检测源：Gitee API v5 (仓库内容 API，仓库公开后免 token)。
 func Check() UpdateInfo {
 	client := newHTTPClient(10 * time.Second)
 
-	// Gitee raw VERSION 文件 — 免认证直读
-	hasUpdate, ver, ok := checkVersionRaw(client, GiteeVersionRaw, CurrentVersion)
-	if ok {
-		if hasUpdate {
+	// Gitee API v5 读取 VERSION 文件 — 返回 JSON，base64 编码
+	ver, err := checkVersionViaAPI(client, GiteeVersionAPI)
+	if err == nil {
+		if greaterVersion(ver, CurrentVersion) {
 			return UpdateInfo{
 				HasUpdate:   true,
 				Version:     ver,
@@ -206,6 +207,37 @@ func Check() UpdateInfo {
 	return UpdateInfo{
 		Error: fmt.Sprintf("检测失败，请手动下载更新\n%s", GiteeReleasesPage),
 	}
+}
+
+// checkVersionViaAPI 通过 Gitee API v5 读取仓库文件内容，返回版本号。
+func checkVersionViaAPI(client *http.Client, url string) (string, error) {
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	var result struct {
+		Content  string `json:"content"`
+		Encoding string `json:"encoding"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", err
+	}
+	if result.Encoding != "base64" || result.Content == "" {
+		return "", fmt.Errorf("unexpected response format")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(result.Content)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(decoded)), nil
 }
 
 // parseVersion 解析语义化版本号
