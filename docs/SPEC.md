@@ -70,18 +70,121 @@
     → 停止 watcher
     → Restore() 最终恢复
     → SendInfo() 汇总通知
-
-更新流程:
-  前端检查更新 → Go Check()
-    → 读取 config.json update_url
-    → HTTP GET Releases API
-    → 解析 JSON、比较版本号
-    → 返回 UpdateInfo
-  前端下载 → Go Download(url)
-    → HTTP GET → 写入 %TEMP%/wintools_update.exe
-  前端应用 → Go Apply(path)
-    → 写批处理脚本 → cmd /c → 替换 exe → 重启
 ```
+
+## 更新机制
+
+### 检测流程
+
+```
+Check()                                          → UpdateInfo
+  ├─ ① GitHub raw VERSION 文件 (首选，无限流)
+  │   GET https://raw.githubusercontent.com/.../VERSION
+  │   返回纯文本版本号，如 "1.0.7"
+  │   greaterVersion("1.0.7", CurrentVersion) → HasUpdate
+  │
+  ├─ ② GitHub Release API (回退，60次/小时限流)
+  │   GET https://api.github.com/repos/.../releases/latest
+  │   解析 JSON → 匹配资源名 → 返回下载地址
+  │
+  └─ ③ 均失败 → Error: "检测失败，请手动下载更新"
+```
+
+### 下载流程
+
+```
+DownloadUpdate(url)                              → filePath
+  ├─ HTTP GET 下载安装包 (32KB 缓冲块读取)
+  ├─ 每 200ms 发送 update:download-progress 事件
+  │   payload: { downloaded, total, percent }
+  ├─ 写入 %TEMP%\wintools_update.exe
+  └─ 下载完成发送 percent: 100
+```
+
+### 安装流程
+
+```
+ApplyUpdate(path)                                → "" (成功)
+  ├─ exec.Command(installer, "/S")
+  │   SysProcAttr: HideWindow, DETACHED_PROCESS
+  ├─ 安装器作为独立进程启动（脱离父进程 Job Object）
+  └─ 返回成功 → 前端调 ConfirmQuit() → 应用退出
+      安装器继续运行 → UAC 提权 → 替换文件 → 启动新版
+```
+
+### 更新检测优先级
+
+| 优先级 | 源 | URL | 限流 | 认证 |
+|--------|---|-----|------|------|
+| 1 (首选) | GitHub raw | `raw.githubusercontent.com/.../VERSION` | 无 | 无 |
+| 2 (回退) | GitHub API | `api.github.com/repos/.../releases/latest` | 60次/时 | 无 |
+
+### 关键文件
+
+| 文件 | 作用 |
+|------|------|
+| `internal/updater/checker.go` | 版本比较、VERSION 文件检查、API 检查、下载 |
+| `internal/updater/api.go` | Wails 绑定接口，含进度通知 |
+| `VERSION` (repo 根部) | 纯文本版本号，供 raw 方式直读 |
+| `build.ps1` | 构建发布入口，自动更新 VERSION |
+
+## 更新问题记录
+
+### v1.0.4 — 资源名不匹配
+
+**问题:** GitHub Release 上传的资源名为 `Wintools_Windows_x86_64.exe`，但代码中查找 `Wintools_Windows_x86_64_Setup.exe`，导致 API 检查成功但找不到安装包。
+
+**修复:** 将匹配名改为 `Wintools_Windows_x86_64.exe`（与 `$AssetName` 定义一致）。
+
+### v1.0.5 — Apply 中 os.Exit(0) 导致前端挂起
+
+**问题:** `Apply()` 在启动 batch 后调用 `os.Exit(0)`，Go 进程立即终止，Wails 无法返回响应给前端，JavaScript `await` 永远挂起。
+
+**修复:** `Apply()` 只启动安装器后返回 `""`，由前端调用 `ConfirmQuit()`（Wails Go binding 官方退出方式）。
+
+### v1.0.6 — cmd.exe 找不到 + batch 窗口闪烁
+
+**问题:** Wails 打包后 `%PATH%` 可能不含 `C:\Windows\System32`，`exec.Command("cmd")` 失败。batch 的 `start` 命令对 GUI 程序行为不稳定且窗口闪烁。
+
+**修复:** 去掉 batch 中间层，`exec.Command(installer, "/S")` 直接启动 NSIS 安装器，用完整路径避免 PATH 问题。
+
+### v1.0.6 — UAC 提权弹窗被抑制
+
+**问题:** NSIS 安装器需要管理员权限，`DETACHED_PROCESS` 下 UAC 弹窗可能被阻止。
+
+**修复:** 确保安装器以分离进程启动，UAC 在 Windows 安全桌面上不受父进程状态影响。去掉了 `/S` 静默标志让安装器显示界面以便用户确认。
+
+### v1.0.7 — GitHub API 限流
+
+**问题:** 无认证 GitHub API 限流 60次/小时，频繁测试时触发 403。
+
+**修复:** 新增 `raw.githubusercontent.com/.../VERSION` 检测方式，纯文本文件无 API 限流。VERSION 文件同时推送到 GitHub + Gitee。
+
+## 规范与约束
+
+### 更新机制规范
+
+| 规范 | 说明 |
+|------|------|
+| VERSION 文件 | 每次发布前必须更新 `VERSION` 文件并提交推送 |
+| 发布流程 | 必须使用 `build.ps1 release` 或 `build.ps1 all`，不手动创建 Release |
+| 资源名 | GitHub/Gitee Release 资源名必须为 `Wintools_Windows_x86_64.exe` |
+| 编码 | `checker.go` 中所有中文注释/字符串使用 UTF-8，禁止 GB2312/Latin-1 |
+| 回退 | 检测源依次降级：raw → API → 手动下载提示 |
+| 下载进度 | 新增下载功能必须通过 `update:download-progress` 事件报告进度 |
+
+### 安装器行为约束
+
+- NSIS 安装器必须支持 `/S` 静默安装
+- 安装后必须自动启动新版应用（Wails NSIS 模板默认行为）
+- 安装器需要管理员权限（`RequestExecutionLevel admin`），UAC 提权由 Windows 处理
+- `Apply()` 不调用 `os.Exit()`，由前端通过 `ConfirmQuit()` 正常退出
+
+### 构建约束
+
+- 构建前确保 `master` 分支干净、测试通过
+- `local-tokens.ps1` 包含双平台 token，此文件已被 `.gitignore` 排除
+- `build.ps1 all` 修改 git 历史 + 推送远程，仅在确认发布时使用
 
 ## 关键配置
 
