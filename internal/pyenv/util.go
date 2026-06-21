@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 // extractZip extracts a zip file to the target directory.
@@ -126,51 +124,6 @@ func configurePth(targetDir string) error {
 	}
 	content := strings.Join(newLines, "\r\n") + "\r\n"
 	return os.WriteFile(pthPath, []byte(content), 0644)
-}
-
-// installPip downloads and installs pip for the target Python.
-func installPip(pythonExe, mirror string) error {
-	getPipPath := filepath.Join(filepath.Dir(pythonExe), "get-pip.py")
-	if err := downloadFile(GetPipURL, getPipPath); err != nil {
-		return fmt.Errorf("下载 get-pip.py 失败: %w", err)
-	}
-	args := []string{getPipPath, "--no-warn-script-location"}
-	if mirror != "" {
-		args = append(args, "-i", mirror, "--trusted-host", extractHost(mirror))
-	}
-	cmd := exec.Command(pythonExe, args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-// installPackages installs the given Python packages via pip from mirror.
-func installPackages(pythonExe, mirror string, packages []string) error {
-	if len(packages) == 0 {
-		return nil
-	}
-	args := []string{"-m", "pip", "install"}
-	if mirror != "" {
-		args = append(args, "-i", mirror, "--trusted-host", extractHost(mirror))
-	}
-	args = append(args, packages...)
-	cmd := exec.Command(pythonExe, args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-// addToSystemPath adds Python directories to system PATH via setx.
-func addToSystemPath(installDir string) error {
-	paths := []string{installDir, filepath.Join(installDir, "Scripts")}
-	for _, p := range paths {
-		cmd := exec.Command("setx", "/M", "PATH", p+";%PATH%")
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-		cmd.Run()
-	}
-	return nil
 }
 
 func extractHost(mirrorURL string) string {

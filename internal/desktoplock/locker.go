@@ -84,7 +84,7 @@ func (a *API) VerifyPassword(pwd string) bool {
 	count := atomic.LoadInt32(&a.failCount)
 	last := atomic.LoadInt64(&a.lastFailTime)
 	if count >= 5 {
-		if time.Now().Unix()-last < 30 {
+		if time.Since(time.Unix(last, 0)).Seconds() < 30 {
 			return false
 		}
 		// 超过 30 秒重置
@@ -145,7 +145,11 @@ func (a *API) loadConfig() {
 		a.config = &Config{PasswordHash: hashPassword(defaultPassword)}
 		return
 	}
-	json.Unmarshal(data, a.config)
+	if err := json.Unmarshal(data, a.config); err != nil {
+		common.Warn("lock-config.json 解析失败，使用默认密码: %v", err)
+		a.config = &Config{PasswordHash: hashPassword(defaultPassword)}
+		return
+	}
 	if a.config.PasswordHash == hashPassword(oldDefaultPassword) {
 		a.config.PasswordHash = hashPassword(defaultPassword)
 		a.saveConfig()

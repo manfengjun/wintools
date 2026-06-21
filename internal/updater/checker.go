@@ -20,19 +20,25 @@ import (
 )
 
 const (
-	CurrentVersion = "1.0.6"
+	CurrentVersion = "1.1.0"
 
-	// GitHub raw VERSION 文件（免认证、无限流）
+	// GitHub raw VERSION 文件（免认证、无限流，首选）
 	GitHubVersionRaw = "https://raw.githubusercontent.com/manfengjun/wintools/master/VERSION"
 
-	// 下载 URL 模板：已知的 GitHub Release 资源路径
+	// Gitee raw VERSION 文件（国内网络友好，免认证，备选）
+	GiteeVersionRaw = "https://gitee.com/3672830/wintools/raw/master/VERSION"
+
+	// 下载 URL 模板：GitHub Release 资源路径
 	GitHubDownloadTemplate = "https://github.com/manfengjun/wintools/releases/download/v%s/Wintools_Windows_x86_64.exe"
 
-	// GitHub Release API（作为回退方案）
-	GitHubLatestReleaseAPI = "https://api.github.com/repos/manfengjun/wintools/releases/latest"
+	// 下载 URL 模板：Gitee Release 资源路径
+	GiteeDownloadTemplate = "https://gitee.com/3672830/wintools/releases/download/v%s/Wintools_Windows_x86_64.exe"
 
-	// Gitee Releases 页面（检测失败时提示用户手动前往）
+	// Gitee Releases 页面（全部检测失败时提示用户手动前往）
 	GiteeReleasesPage = "https://gitee.com/3672830/wintools/releases"
+
+	// 默认更新源 URL（用于设置页面的显示与自定义）
+	DefaultUpdateAPI = "https://api.github.com/repos/manfengjun/wintools/releases/latest"
 )
 
 // UpdateInfo 更新检测结果
@@ -183,11 +189,13 @@ func checkVersionRaw(client *http.Client, url, currentVersion string) (bool, str
 	return false, remoteVersion, true
 }
 
-// Check 检查 GitHub 最新版本，按优先级尝试多种源。
+// Check 检查最新版本，按优先级尝试多种源。
+// 返回 UpdateInfo，其中 HasUpdate=true 表示有新版本。
+// 检测链：GitHub raw → Gitee raw → 手动下载提示。
 func Check() UpdateInfo {
 	client := newHTTPClient(10 * time.Second)
 
-	// 1. GitHub raw VERSION 文件 — 纯文本一行版本号，无 API 限流
+	// 1. GitHub raw VERSION 文件 — 海外用户首选，免认证无限流
 	hasUpdate, ver, ok := checkVersionRaw(client, GitHubVersionRaw, CurrentVersion)
 	if ok {
 		if hasUpdate {
@@ -200,10 +208,17 @@ func Check() UpdateInfo {
 		return UpdateInfo{Version: CurrentVersion}
 	}
 
-	// 2. 回退：GitHub Release API（有 60次/小时 限流）
-	info := checkRelease(GitHubLatestReleaseAPI, CurrentVersion)
-	if info.Error == "" {
-		return info
+	// 2. Gitee raw VERSION 文件 — 国内网络友好，免认证
+	hasUpdate, ver, ok = checkVersionRaw(client, GiteeVersionRaw, CurrentVersion)
+	if ok {
+		if hasUpdate {
+			return UpdateInfo{
+				HasUpdate:   true,
+				Version:     ver,
+				DownloadURL: fmt.Sprintf(GiteeDownloadTemplate, ver),
+			}
+		}
+		return UpdateInfo{Version: CurrentVersion}
 	}
 
 	// 3. 全部失败 → 提示手动前往 Gitee 下载
@@ -241,28 +256,11 @@ func greaterVersion(a, b string) bool {
 	return false
 }
 
-// Download 下载更新文件
-func Download(url string) (string, error) {
-	client := newHTTPClient(120 * time.Second)
-	resp, err := client.Get(url)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	tmpDir := os.TempDir()
-	tmpFile := filepath.Join(tmpDir, "wintools_update.exe")
-	f, err := os.Create(tmpFile)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	_, err = io.Copy(f, resp.Body)
-	if err != nil {
-		return "", err
-	}
-	return tmpFile, nil
+// buildInstallerBatch 为给定的安装程序路径生成批处理脚本内容。
+// 使用 start /wait 以分离方式启动 NSIS 安装器并等待其完成。
+// 测试用辅助函数，当前 Apply 直接使用 exec.Command。
+func buildInstallerBatch(installerPath string) string {
+	return fmt.Sprintf("@echo off\r\nstart \"\" /wait \"%s\" /S\r\n", installerPath)
 }
 
 // Apply 启动安装器（分离进程），然后由前端关闭应用。
@@ -282,8 +280,4 @@ func Apply(updatePath string) string {
 	}
 	return ""
 }
-
-
-
-
 
