@@ -245,6 +245,23 @@ func scanUserShortcuts() []string {
 	return result
 }
 
+// cleanBackupDir 清空备份目录中所有旧的 .lnk/.url 文件，避免残余导致恢复时重复。
+func cleanBackupDir(bd string) {
+	entries, err := os.ReadDir(bd)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		low := strings.ToLower(e.Name())
+		if strings.HasSuffix(low, ".lnk") || strings.HasSuffix(low, ".url") {
+			os.Remove(filepath.Join(bd, e.Name()))
+		}
+	}
+}
+
 // Backup 备份桌面快捷方式到备份目录（扫描用户桌面 + 公用桌面，供手动备份使用）。
 func (a *API) Backup() BackupResult {
 	names, origin := scanDesktopShortcutsWithOrigin()
@@ -259,6 +276,7 @@ func (a *API) Backup() BackupResult {
 func backupLockShortcuts() error {
 	bd := backupDir()
 	os.MkdirAll(bd, 0755)
+	cleanBackupDir(bd)
 	origin := map[string]string{}
 	for _, name := range scanUserShortcuts() {
 		src := filepath.Join(desktopPath(), name)
@@ -271,9 +289,7 @@ func backupLockShortcuts() error {
 		}
 		origin[name] = "user"
 	}
-	if len(origin) > 0 {
-		saveOrigin(origin)
-	}
+	saveOrigin(origin)
 	return nil
 }
 
@@ -281,6 +297,7 @@ func backupLockShortcuts() error {
 func backupShortcuts(names []string) BackupResult {
 	bd := backupDir()
 	os.MkdirAll(bd, 0755)
+	cleanBackupDir(bd)
 	ok := 0
 	skipped := 0
 
