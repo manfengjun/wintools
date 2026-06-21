@@ -62,29 +62,57 @@ func expandWindowsEnv(input string) string {
 	return syscall.UTF16ToString(buf)
 }
 
-// scanDesktopShortcuts 扫描桌面，返回所有 .lnk / .url 文件名。
-// 使用 os.Open + Readdirnames（避免 os.ReadDir 的 DirEntry.Info 在部分 Windows 上报错）。
+// publicDesktopPath 返回公用桌面路径（如 C:\Users\Public\Desktop）。
+// 系统级安装的程序（Chrome、微信、QQ 等）的快捷方式放在这里。
+func publicDesktopPath() string {
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE,
+		`SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders`,
+		registry.QUERY_VALUE)
+	if err == nil {
+		defer k.Close()
+		val, _, err := k.GetStringValue("Common Desktop")
+		if err == nil && val != "" {
+			if expanded := expandWindowsEnv(val); expanded != "" {
+				return expanded
+			}
+			return val
+		}
+	}
+	return filepath.Join(os.Getenv("PUBLIC"), "Desktop")
+}
+
+// scanDesktopShortcuts 扫描用户桌面和公用桌面，返回所有 .lnk / .url 文件名。
+// 公用桌面存放系统级安装的程序快捷方式（如 Chrome、微信、QQ），
+// Windows Explorer 会在桌面视图合并显示两个目录的内容。
 func scanDesktopShortcuts() []string {
-	desktop := desktopPath()
-	f, err := os.Open(desktop)
-	if err != nil {
-		common.Warn("scanDesktopShortcuts: 打开桌面目录失败: %v", err)
-		return nil
-	}
-	defer f.Close()
-
-	names, err := f.Readdirnames(-1)
-	if err != nil {
-		common.Warn("scanDesktopShortcuts: 读取桌面目录失败: %v", err)
-		return nil
-	}
-
+	seen := map[string]bool{}
 	var result []string
-	for _, name := range names {
-		low := strings.ToLower(name)
-		if strings.HasSuffix(low, ".lnk") || strings.HasSuffix(low, ".url") {
-			path := filepath.Join(desktop, name)
-			if info, err := os.Stat(path); err == nil && !info.IsDir() {
+
+	// Windows Explorer 合并显示用户桌面和公用桌面，两个目录都要扫描
+	for _, dir := range []string{desktopPath(), publicDesktopPath()} {
+		if dir == "" {
+			continue
+		}
+		f, err := os.Open(dir)
+		if err != nil {
+			continue
+		}
+		names, err := f.Readdirnames(-1)
+		f.Close()
+		if err != nil {
+			continue
+		}
+		for _, name := range names {
+			if seen[name] {
+				continue
+			}
+			low := strings.ToLower(name)
+			if !strings.HasSuffix(low, ".lnk") && !strings.HasSuffix(low, ".url") {
+				continue
+			}
+			info, err := os.Stat(filepath.Join(dir, name))
+			if err == nil && !info.IsDir() {
+				seen[name] = true
 				result = append(result, name)
 			}
 		}
@@ -130,15 +158,17 @@ func (a *API) Backup() BackupResult {
 	skipped := 0
 
 	for _, name := range scanDesktopShortcuts() {
-		src := filepath.Join(desktopPath(), name)
-		dst := filepath.Join(bd, name)
+		src := resolveShortcutPath(name)
+		if src == "" {
+			skipped++
+			continue
+		}
 		data, err := os.ReadFile(src)
 		if err != nil {
 			skipped++
 			continue
 		}
-
-		if err := os.WriteFile(dst, data, 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(bd, name), data, 0644); err != nil {
 			skipped++
 			continue
 		}
@@ -147,6 +177,17 @@ func (a *API) Backup() BackupResult {
 
 	common.Info("备份完成: %d 成功, %d 跳过", ok, skipped)
 	return BackupResult{OK: ok, Skipped: skipped, Dir: bd}
+}
+
+// resolveShortcutPath 在用户桌面和公用桌面中查找快捷方式的完整路径。
+func resolveShortcutPath(name string) string {
+	for _, dir := range []string{desktopPath(), publicDesktopPath()} {
+		path := filepath.Join(dir, name)
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
 }
 
 // Restore 从备份目录恢复缺失的快捷方式到桌面。
