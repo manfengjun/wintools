@@ -151,14 +151,64 @@ func scanBackupDir() []string {
 	return files
 }
 
-// Backup 备份桌面快捷方式到备份目录。
+// scanUserShortcuts 仅扫描用户桌面目录，不扫描公用桌面。
+// 用于锁定保护，避免公用桌面图标被复制到用户桌面造成重复。
+func scanUserShortcuts() []string {
+	desktop := desktopPath()
+	f, err := os.Open(desktop)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	names, err := f.Readdirnames(-1)
+	if err != nil {
+		return nil
+	}
+
+	var result []string
+	for _, name := range names {
+		low := strings.ToLower(name)
+		if strings.HasSuffix(low, ".lnk") || strings.HasSuffix(low, ".url") {
+			if info, err := os.Stat(filepath.Join(desktop, name)); err == nil && !info.IsDir() {
+				result = append(result, name)
+			}
+		}
+	}
+	return result
+}
+
+// Backup 备份桌面快捷方式到备份目录（扫描用户桌面 + 公用桌面，供手动备份使用）。
 func (a *API) Backup() BackupResult {
+	return backupShortcuts(scanDesktopShortcuts())
+}
+
+// backupLockShortcuts 仅备份用户桌面快捷方式（供 Lock 使用），不扫描公用桌面。
+// 避免锁定后公用桌面图标被复制到用户桌面造成重复。
+func backupLockShortcuts() error {
+	bd := backupDir()
+	os.MkdirAll(bd, 0755)
+	for _, name := range scanUserShortcuts() {
+		src := filepath.Join(desktopPath(), name)
+		data, err := os.ReadFile(src)
+		if err != nil {
+			continue
+		}
+		if err := os.WriteFile(filepath.Join(bd, name), data, 0644); err != nil {
+			continue
+		}
+	}
+	return nil
+}
+
+// backupShortcuts 将给定的快捷方式列表备份到备份目录。
+func backupShortcuts(names []string) BackupResult {
 	bd := backupDir()
 	os.MkdirAll(bd, 0755)
 	ok := 0
 	skipped := 0
 
-	for _, name := range scanDesktopShortcuts() {
+	for _, name := range names {
 		src := resolveShortcutPath(name)
 		if src == "" {
 			skipped++

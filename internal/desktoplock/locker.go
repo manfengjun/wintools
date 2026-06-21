@@ -174,7 +174,9 @@ func (a *API) Lock() bool {
 	a.mu.Unlock()
 
 	// 不在锁内执行文件 I/O
-	a.Backup()
+	if err := backupLockShortcuts(); err != nil {
+		common.Warn("锁定备份失败: %v", err)
+	}
 
 	atomic.StoreInt32(&a.deletedCount, 0)
 	atomic.StoreInt64(&a.lastAlertUnix, 0)
