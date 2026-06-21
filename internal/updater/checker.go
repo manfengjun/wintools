@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	CurrentVersion = "1.1.1"
+	CurrentVersion = "1.2.0"
 
 	// Gitee API VERSION 文件（仓库已公开，免 token 直读）
 	GiteeVersionAPI = "https://gitee.com/api/v5/repos/3672830/wintools/contents/VERSION"
@@ -293,5 +293,6 @@ func Apply(updatePath string) string {
 	}
 	return ""
 }
+
 
 
