@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	CurrentVersion = "1.1.0"
+	CurrentVersion = "1.1.1"
 
 	// Gitee raw VERSION 文件（免认证，检测更新用）
 	GiteeVersionRaw = "https://gitee.com/3672830/wintools/raw/master/VERSION"
@@ -261,4 +261,5 @@ func Apply(updatePath string) string {
 	}
 	return ""
 }
+
 
