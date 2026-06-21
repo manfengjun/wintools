@@ -91,6 +91,9 @@ func main() {
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: "Wintools-SingleInstance",
 			OnSecondInstanceLaunch: func(data options.SecondInstanceData) {
+				if handleDemoSecondInstance(app, data.Args) {
+					return
+				}
 				app.showMainWindow()
 			},
 		},

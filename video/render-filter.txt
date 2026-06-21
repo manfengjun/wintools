@@ -1,0 +1,20 @@
+[1:v]scale=1000:562:flags=lanczos[screen];
+[0:v][screen]overlay=40:430[base];
+[base]
+drawbox=x=40:y=430:w=1000:h=562:color=0x24213B:t=fill:enable='between(t,6,14)',
+drawbox=x=70:y=460:w=940:h=502:color=0x342E58:t=fill:enable='between(t,6,14)',
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='学生乱删图标？桌面锁自动恢复':fontcolor=0x4B2DAA:fontsize=58:x=(w-text_w)/2:y=150,
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='课堂电脑桌面':fontcolor=white@0.8:fontsize=32:x=110:y=495:enable='between(t,6,14)',
+drawbox=x=450:y=585:w=180:h=210:color=white@0.12:t=fill:enable='between(t,6,7.5)+between(t,8.7,14)',
+drawbox=x=500:y=620:w=80:h=80:color=0x7C4DFF:t=fill:enable='between(t,6,7.5)+between(t,8.7,14)',
+drawtext=fontfile='C\:/Windows/Fonts/arial.ttf':text='W':fontcolor=white:fontsize=48:x=521:y=628:enable='between(t,6,7.5)+between(t,8.7,14)',
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='Wintools演示':fontcolor=white:fontsize=26:x=468:y=720:enable='between(t,6,7.5)+between(t,8.7,14)',
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='正在删除快捷方式…':fontcolor=white:fontsize=38:x=(w-text_w)/2:y=675:enable='between(t,7.5,8.7)',
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='✓ 已自动恢复':fontcolor=0x67E8A5:fontsize=42:x=(w-text_w)/2:y=835:enable='between(t,8.7,14)',
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='码力工坊 · 机器人编程教学工具':fontcolor=0x6B5B95:fontsize=30:x=(w-text_w)/2:y=1090,
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='上课时，学生误删桌面快捷方式，总让老师头疼。':fontcolor=white:fontsize=36:x=(w-text_w)/2:y=1320:box=1:boxcolor=black@0.62:boxborderw=18:enable='between(t,0.1,4.585)',
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='打开码力工坊，进入桌面锁，输入管理密码，一键锁定。':fontcolor=white:fontsize=34:x=(w-text_w)/2:y=1320:box=1:boxcolor=black@0.62:boxborderw=18:enable='between(t,4.535,9.238)',
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='现在删除演示图标。':fontcolor=white:fontsize=40:x=(w-text_w)/2:y=1320:box=1:boxcolor=black@0.62:boxborderw=18:enable='between(t,9.238,11.309)',
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='几乎瞬间，图标就自动恢复。':fontcolor=white:fontsize=40:x=(w-text_w)/2:y=1320:box=1:boxcolor=black@0.62:boxborderw=18:enable='between(t,11.309,14.202)',
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='解锁之后，桌面恢复正常管理。':fontcolor=white:fontsize=40:x=(w-text_w)/2:y=1320:box=1:boxcolor=black@0.62:boxborderw=18:enable='between(t,14.202,17.035)',
+drawtext=fontfile='C\:/Windows/Fonts/msyh.ttc':text='码力工坊，让机房课堂更省心。':fontcolor=white:fontsize=40:x=(w-text_w)/2:y=1320:box=1:boxcolor=black@0.62:boxborderw=18:enable='between(t,17.035,20.095)'[v]

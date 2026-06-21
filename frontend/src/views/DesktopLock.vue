@@ -162,12 +162,14 @@ onMounted(refreshStatus)
         <button
           v-if="!locked"
           class="btn btn-primary btn-flex"
+          data-demo-id="lock-toggle"
           @click="verifyAndLock"
           :aria-label="t('desktopLock.lock')"
         >{{ t('desktopLock.lock') }}</button>
         <button
           v-if="locked"
           class="btn btn-success btn-flex"
+          data-demo-id="lock-toggle"
           @click="verifyAndLock"
           :aria-label="t('desktopLock.unlock')"
         >{{ t('desktopLock.unlock') }}</button>
@@ -243,12 +245,12 @@ onMounted(refreshStatus)
       <div class="dialog">
         <h3>{{ locked ? t('desktopLock.pwdDialogUnlock') : t('desktopLock.pwdDialogLock') }}</h3>
         <p>{{ t('desktopLock.pwdDialogTitle') }}</p>
-        <input v-model="pwdInput" class="input" type="password" :placeholder="t('desktopLock.pwdDialogTitle')"
+        <input v-model="pwdInput" class="input" type="password" data-demo-id="password-input" :placeholder="t('desktopLock.pwdDialogTitle')"
                aria-label="password" @keyup.enter="confirmPwd" autofocus />
         <p v-if="pwdError" class="pwd-error">{{ pwdError }}</p>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
           <button class="btn btn-outline btn-sm" @click="cancelPwd">{{ t('common.cancel') }}</button>
-          <button class="btn btn-primary btn-sm" @click="confirmPwd">{{ t('common.confirm') }}</button>
+          <button class="btn btn-primary btn-sm" data-demo-id="password-confirm" @click="confirmPwd">{{ t('common.confirm') }}</button>
         </div>
       </div>
     </div>
