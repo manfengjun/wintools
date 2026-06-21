@@ -5,8 +5,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/manfengjun/wintools/internal/common"
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -25,7 +27,7 @@ func backupDir() string  { return filepath.Join(appDataDir(), "lock-backup") }
 
 // desktopPath 从注册表读取实际桌面目录路径。
 // OneDrive 已知文件夹移动或企业重定向时，实际桌面不是 USERPROFILE\Desktop。
-// 回退到硬编码的 USERPROFILE\Desktop。
+// 使用 Windows ExpandEnvironmentStringsW API 展开 %VAR% 格式环境变量。
 func desktopPath() string {
 	k, err := registry.OpenKey(registry.CURRENT_USER,
 		`Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders`,
@@ -34,11 +36,30 @@ func desktopPath() string {
 		defer k.Close()
 		val, _, err := k.GetStringValue("Desktop")
 		if err == nil && val != "" {
-			// 展开 %USERPROFILE% 等环境变量
-			return os.ExpandEnv(val)
+			// Windows 环境变量为 %VAR% 格式，用 Win32 ExpandEnvironmentStringsW 展开
+			if expanded := expandWindowsEnv(val); expanded != "" {
+				return expanded
+			}
+			return val
 		}
 	}
 	return filepath.Join(os.Getenv("USERPROFILE"), "Desktop")
+}
+
+// expandWindowsEnv 调用 Win32 ExpandEnvironmentStringsW 展开 %VAR% 格式环境变量。
+func expandWindowsEnv(input string) string {
+	src, err := syscall.UTF16PtrFromString(input)
+	if err != nil {
+		return ""
+	}
+	// 先查询所需缓冲区大小
+	n, _ := windows.ExpandEnvironmentStrings(src, nil, 0)
+	if n == 0 {
+		return ""
+	}
+	buf := make([]uint16, n)
+	windows.ExpandEnvironmentStrings(src, &buf[0], n)
+	return syscall.UTF16ToString(buf)
 }
 
 // scanDesktopShortcuts 扫描桌面，返回所有 .lnk / .url 文件名。
