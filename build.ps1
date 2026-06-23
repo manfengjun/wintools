@@ -37,6 +37,25 @@ $LocalTokens = Join-Path $ProjectDir "local-tokens.ps1"
 if (Test-Path $LocalTokens) {
     . $LocalTokens
     Write-Host "  已加载 local-tokens.ps1" -ForegroundColor DarkGray
+} else {
+    Write-Host "  ⚠ local-tokens.ps1 不存在，尝试从 ~/.git-credentials 读取..." -ForegroundColor Yellow
+    $credFile = "$env:USERPROFILE\.git-credentials"
+    if (Test-Path $credFile) {
+        $creds = Get-Content $credFile
+        foreach ($line in $creds) {
+            if ($line -match 'https?://([^:]+):([^@]+)@github\.com') {
+                if (-not $env:GH_TOKEN) { $env:GH_TOKEN = $matches[2] }
+            }
+            if ($line -match 'https?://([^:]+):([^@]+)@gitee\.com') {
+                if (-not $env:GITEE_TOKEN) { $env:GITEE_TOKEN = $matches[2] }
+            }
+        }
+        if ($env:GH_TOKEN) { Write-Host "  ✓ 从 ~/.git-credentials 读取 GH_TOKEN" -ForegroundColor Green }
+        if ($env:GITEE_TOKEN) { Write-Host "  ✓ 从 ~/.git-credentials 读取 GITEE_TOKEN" -ForegroundColor Green }
+    }
+    if (-not $env:GH_TOKEN -and -not $env:GITEE_TOKEN) {
+        Write-Host "  ⚠ 未找到任何 token，Release 发布将失败" -ForegroundColor Red
+    }
 }
 
 $GiteeOwner = "3672830"
