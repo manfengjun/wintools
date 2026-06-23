@@ -144,7 +144,7 @@ function Initialize-NSIS {
         $dir = @($knownPaths)[0]
         $env:PATH = "$dir;$env:PATH"
         # 确认 makensis 能真正运行
-        $test = cmd /c "$dir\makensis.exe -VERSION" 2>$null
+        $test = & "$dir\makensis.exe" -VERSION 2>$null
         if ($test) {
             Write-Host "  NSIS $($test.Trim()) 已就绪" -ForegroundColor DarkGray
             return $true
@@ -163,6 +163,12 @@ function Invoke-Build {
     Remove-Item -Path "$ProjectDir\build\bin\*" -Force -ErrorAction SilentlyContinue
 
     $hasNSIS = Initialize-NSIS
+
+    # 确保 GOPATH/bin 在 PATH 中（wails 等 go 安装工具的位置）
+    $goBinPath = "$env:USERPROFILE\go\bin"
+    if (Test-Path $goBinPath) {
+        $env:Path = "$goBinPath;$env:Path"
+    }
 
     Push-Location $ProjectDir
     try {
