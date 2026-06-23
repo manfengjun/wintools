@@ -77,10 +77,15 @@ function Get-DefaultBranch {
 
 # 查找构建产物：优先 NSIS 安装包，其次 Wintools.exe
 function Get-BuildArtifact {
-    # 优先找 NSIS 安装包
-    $installer = Get-ChildItem "$ProjectDir\build\bin" -Filter "*installer*.exe" -File -ErrorAction SilentlyContinue |
+    # 优先在 packages/ 找安装包
+    $installer = Get-ChildItem "$ProjectDir\build\packages" -Filter "*installer*.exe" -File -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($installer) { return $installer }
+
+    # 退回到裸 EXE（或旧版安装包仍留在 build/bin 中的情况）
+    $installerLegacy = Get-ChildItem "$ProjectDir\build\bin" -Filter "*installer*.exe" -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($installerLegacy) { return $installerLegacy }
 
     # 退回到裸 EXE
     $exe = Get-ChildItem "$ProjectDir\build\bin\Wintools.exe" -File -ErrorAction SilentlyContinue |
@@ -182,6 +187,17 @@ function Invoke-Build {
         }
 
         $exe = Get-Item "build\bin\Wintools.exe" -ErrorAction Stop
+
+        # 将 NSIS 安装包移至 packages/ 目录
+        $packagesDir = "$ProjectDir\build\packages"
+        New-Item -ItemType Directory -Path $packagesDir -Force | Out-Null
+        $installer = Get-ChildItem "build\bin" -Filter "*installer*.exe" -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($installer) {
+            $targetPath = Join-Path $packagesDir $installer.Name
+            Move-Item -Path $installer.FullName -Destination $targetPath -Force
+        }
+
         $artifact = Get-BuildArtifact
 
         Write-Host "✅ 构建成功: $ver" -ForegroundColor Green
